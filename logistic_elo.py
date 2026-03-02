@@ -1,9 +1,18 @@
 import pandas as pd
 import numpy as np
+import duckdb
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, log_loss, roc_auc_score, brier_score_loss
+from datetime import datetime
+import os
 
+SAVE_RESULTS = False
+RESULTS_FILE = "/media/vallu/Storage/Coding/Own_projects/betting_model/model/results_log.csv"
+RUN_NOTE = "logistic"
+
+PARQUET_DIR = "/media/vallu/Storage/Coding/Own_projects/betting_model/vallu_scraper/data/parquet"
+con = duckdb.connect()
 
 # Data split
 CALIBRATION_SET = 0.5
@@ -18,15 +27,13 @@ HIGH_K = 100
 LOW_K = 20
 THRESHOLD = 30
 
-raw_df = pd.read_json('data/matches.json')
+df = con.execute(f"""
+    SELECT hltv_match_id, team1_name, team2_name, team1_score, team2_score
+    FROM '{PARQUET_DIR}/matches.parquet'
+    ORDER BY hltv_match_id ASC
+""").df()
 
-df = (
-    raw_df[['hltv_match_id', 'team1_name', 'team2_name', 'team1_score', 'team2_score']]
-      .sort_values(by='hltv_match_id', ascending=True)
-      .drop(columns='hltv_match_id')
-      .reset_index(drop=True)
-)
-df['result'] = np.where(df['team1_score'] > df['team2_score'], 1, 0)
+df['result'] = np.where(df['team1_score'] > df['team2_score'], 0, 1)
 df['team1_elo'] = None
 df['team2_elo'] = None
 df['team1_games'] = None
@@ -74,66 +81,6 @@ for index, row in df.iterrows():
     elo[team1]['games_played'] += 1
     elo[team2]['games_played'] += 1
 
-
-import matplotlib.pyplot as plt
-
-# # After the loop, select teams (replace with your desired teams, e.g., based on final ELO or manually)
-# final_elo_sorted = sorted(
-#     elo.items(),
-#     key=lambda x: x[1]['elo'],
-#     reverse=True
-# )[500:520]
-
-# selected_teams = [team for team, _ in final_elo_sorted]
-# print(f"Selected teams: {selected_teams}")
-
-# # Collect ELO history for each selected team
-# plt.figure(figsize=(12, 6))
-# for team in selected_teams:
-#     # Find all matches involving the team
-#     mask_team1 = df['team1_name'] == team
-#     mask_team2 = df['team2_name'] == team
-
-#     # Get pre-match ELO and match indices
-#     elo_history = []
-#     match_indices = []
-
-#     # From team1 perspective
-#     elo_history.extend(df.loc[mask_team1, 'team1_elo'].tolist())
-#     match_indices.extend(df[mask_team1].index.tolist())
-
-#     # From team2 perspective
-#     elo_history.extend(df.loc[mask_team2, 'team2_elo'].tolist())
-#     match_indices.extend(df[mask_team2].index.tolist())
-
-#     # Sort by match index to maintain chronological order
-#     sorted_data = sorted(zip(match_indices, elo_history))
-#     match_indices, elo_history = zip(*sorted_data) if sorted_data else ([], [])
-
-#     # Plot the line
-#     if match_indices:
-#         plt.plot(match_indices, elo_history, marker='o', label=team)
-
-# # Customize plot
-# plt.title('ELO Development Over Matches for Selected Teams')
-# plt.xlabel('Match Index (Chronological)')
-# plt.ylabel('Pre-Match ELO Rating')
-# plt.legend(title='Teams', bbox_to_anchor=(1.05, 1), loc='upper left')
-# plt.grid(True)
-# plt.tight_layout()
-# plt.show()
-
-# Print full table of every team with ELO
-# elo_df = (
-#     pd.DataFrame(
-#         [(team, data['elo'], data['games_played']) for team, data in elo.items()],
-#         columns=['team', 'elo', 'games_played']
-#     )
-#     .sort_values('elo', ascending=False)
-#     .reset_index(drop=True)
-# )
-# print(elo_df.to_string(index=False))
-
 # Filter to consider only >X matches played
 filtered_df = df[(df['team1_games'] > 30) & (df['team2_games'] > 30)]
 
@@ -148,7 +95,7 @@ num_rows = len(train_df)
 print(f"Number of training matches: {num_rows}")
 
 num_rows = len(test_df)
-print(f"Number of training matches: {num_rows}")
+print(f"Number of testing matches: {num_rows}")
 
 train_df = train_df.reset_index(drop=True)
 test_df  = test_df.reset_index(drop=True)
@@ -167,20 +114,76 @@ test_targets = test_df['result']
 model = LogisticRegression(solver='liblinear')
 model.fit(train_inputs, train_targets)
 
-
 def predict_and_plot(inputs, targets, name=''):
-    preds = model.predict(inputs)
     probs = model.predict_proba(inputs)[:, 1]
 
-    acc = accuracy_score(targets, preds)
     ll = log_loss(targets, probs)
     auc = roc_auc_score(targets, probs)
     brier = brier_score_loss(targets, probs)
 
-    print(f"{name} Accuracy:    {acc:.3f}")
     print(f"{name} Log Loss:    {ll:.3f}  (baseline: 0.693)")
     print(f"{name} ROC-AUC:     {auc:.3f}  (baseline: 0.500)")
     print(f"{name} Brier Score: {brier:.3f} (baseline: 0.250)")
 
 predict_and_plot(train_inputs, train_targets, name='Train')
 predict_and_plot(test_inputs, test_targets, name='Test')
+
+if SAVE_RESULTS:
+    train_probs = model.predict_proba(train_inputs)[:, 1]
+    test_probs  = model.predict_proba(test_inputs)[:, 1]
+
+    # Build this run as a dict of metric -> value
+    run_data = {
+        'timestamp':     datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        'model':          RUN_NOTE,
+    }
+    # Add features one by one
+    for i, feat in enumerate(feature_cols, 1):
+        run_data[f'feature_{i}'] = feat
+
+    # Add metrics
+    run_data.update({
+        'train_matches':  len(train_df),
+        'test_matches':   len(test_df),
+        'train_log_loss': round(log_loss(train_targets, train_probs), 4),
+        'train_roc_auc':  round(roc_auc_score(train_targets, train_probs), 4),
+        'train_brier':    round(brier_score_loss(train_targets, train_probs), 4),
+        'test_log_loss':  round(log_loss(test_targets, test_probs), 4),
+        'test_roc_auc':   round(roc_auc_score(test_targets, test_probs), 4),
+        'test_brier':     round(brier_score_loss(test_targets, test_probs), 4),
+    })
+
+    # Convert to a single column Series (metric as index, value as data)
+    new_col = pd.Series(run_data, name=datetime.now().strftime("%Y%m%d_%H%M%S"))
+
+    if os.path.exists(RESULTS_FILE):
+        existing = pd.read_csv(RESULTS_FILE, index_col=0)
+        updated = pd.concat([existing, new_col], axis=1)
+    else:
+        updated = new_col.to_frame()
+
+    # Find all feature rows across all runs
+    all_features = [idx for idx in updated.index if idx.startswith('feature_')]
+    # Sort them numerically
+    all_features = sorted(all_features, key=lambda x: int(x.split('_')[1]))
+
+    # Define fixed order: metadata first, then features, then metrics
+    fixed_order = [
+        'timestamp',
+        'model',
+        *all_features,
+        'train_matches',
+        'test_matches',
+        'train_log_loss',
+        'train_roc_auc',
+        'train_brier',
+        'test_log_loss',
+        'test_roc_auc',
+        'test_brier',
+    ]
+
+    # Reindex to enforce order, keeping any rows not in fixed_order at the end
+    existing_rows = [r for r in fixed_order if r in updated.index]
+    updated = updated.reindex(existing_rows)
+
+    updated.to_csv(RESULTS_FILE)

@@ -1,4 +1,5 @@
 data/
+.~lock*
 
 # Python
 __pycache__/

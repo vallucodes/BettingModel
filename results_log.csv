@@ -1,0 +1,20 @@
+,20260228_163449,20260228_163453,20260302_131656,20260302_131712,20260302_131933,20260302_132426,20260302_132443,20260302_132502,20260302_132534
+timestamp,2026-02-28 16:34:49,2026-02-28 16:34:53,2026-03-02 13:16:56,2026-03-02 13:17:12,2026-03-02 13:19:33,2026-03-02 13:24:26,2026-03-02 13:24:43,2026-03-02 13:25:02,2026-03-02 13:25:34
+model,logistic,logistic,logistic,logistic,logistic,logistic,logistic,logistic,logistic
+feature_1,team1_elo,elo_diff,elo_diff,team1_elo,elo_diff,elo_diff,elo_diff,elo_diff,team1_elo
+feature_2,team2_elo,rating_diff_l10,rating_diff_l10,team2_elo,rating_diff_l10,rating_diff_l10,rating_diff_l10,rating_diff_l10,team2_elo
+feature_3,,kast_diff_l10,kast_diff_l10,,kast_diff_l10,kast_diff_l10,kast_diff_l10,kast_diff_l10,
+feature_4,,swing_diff_l10,swing_diff_l10,,swing_diff_l10,swing_diff_l10,swing_diff_l10,swing_diff_l10,
+feature_5,,team1_rolling_win_rate_l10,team1_rolling_win_rate_l10,,team1_rolling_win_rate_l10,team1_rolling_win_rate_l10,team1_rolling_win_rate_l10,team1_rolling_win_rate_l10,
+feature_6,,team2_rolling_win_rate_l10,team2_rolling_win_rate_l10,,team2_rolling_win_rate_l10,team2_rolling_win_rate_l10,team2_rolling_win_rate_l10,team2_rolling_win_rate_l10,
+feature_7,,is_lan,is_lan,,is_lan,is_lan,is_lan,is_lan,
+train_matches,4701,4588,4683,4683,4683,4683,4683,4683,4683
+test_matches,1176,1148,1171,1171,1171,1171,1171,1171,1171
+train_accuracy,0.5899,0.5992,0.6299,0.6205,0.6299,0.6299,0.6299,0.6299,0.6212
+train_log_loss,0.6637,0.6577,0.6416,0.6461,0.6416,0.6416,0.6416,0.6416,0.6461
+train_roc_auc,0.6275,0.6394,0.6715,0.6644,0.6715,0.6715,0.6715,0.6715,0.6644
+train_brier,0.2358,0.2331,0.2257,0.2277,0.2257,0.2257,0.2257,0.2257,0.2277
+test_accuracy,0.6548,0.6568,0.6362,0.6217,0.6362,0.6362,0.6362,0.6362,0.6208
+test_log_loss,0.627,0.6224,0.6347,0.636,0.6347,0.6347,0.6347,0.6347,0.636
+test_roc_auc,0.698,0.7022,0.6862,0.6874,0.6862,0.6862,0.6862,0.6862,0.6875
+test_brier,0.2187,0.2167,0.2222,0.2228,0.2222,0.2222,0.2222,0.2222,0.2228
