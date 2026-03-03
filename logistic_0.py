@@ -3,7 +3,7 @@ import numpy as np
 import duckdb
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import accuracy_score, log_loss, roc_auc_score, brier_score_loss
+from sklearn.metrics import log_loss, roc_auc_score, brier_score_loss
 from datetime import datetime
 import os
 
@@ -13,11 +13,6 @@ RUN_NOTE = "logistic"
 
 PARQUET_DIR = "/media/vallu/Storage/Coding/Own_projects/betting_model/vallu_scraper/data/parquet"
 con = duckdb.connect()
-
-# Data split
-CALIBRATION_SET = 0.5
-TRAIN_SET = 0.4
-EVAL_SET = 0.1
 
 # K parameters: How much one match infuences ELO change
 # HIGH_K: Used for ELO calibration
