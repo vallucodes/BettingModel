@@ -2,17 +2,18 @@ import pandas as pd
 import numpy as np
 import duckdb
 from sklearn.model_selection import train_test_split
-from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import log_loss, roc_auc_score, brier_score_loss
 from datetime import datetime
-from sklearn.calibration import calibration_curve
 import matplotlib.pyplot as plt
 import os
 from sklearn.preprocessing import StandardScaler
 
+import xgboost as xgb
+
+
 SAVE_RESULTS = False
 RESULTS_FILE = "/media/vallu/Storage/Coding/Own_projects/betting_model/model/results_log.csv"
-RUN_NOTE = "logistic_l15_map_190_90_17_team_130_50_25"
+RUN_NOTE = "xgb_l15_map_190_90_17_team_130_50_25"
 
 PARQUET_DIR = "/media/vallu/Storage/Coding/Own_projects/betting_model/vallu_scraper/data/parquet"
 FEATURES_DIR = "/media/vallu/Storage/Coding/Own_projects/betting_model/vallu_scraper/data/features"
@@ -27,7 +28,7 @@ TEAM_ELO_FILE = (
 
 con = duckdb.connect()
 
-# Base match-level data
+# Base match-level data (same as random_forest_1.py, but we could add LAN/BO flags later if desired)
 df = con.execute(
     f"""
     SELECT
@@ -35,22 +36,13 @@ df = con.execute(
         team1_name,
         team2_name,
         team1_score,
-        team2_score,
-        event_type,
-        is_bo1,
-        is_bo3,
-        is_bo5
+        team2_score
     FROM '{PARQUET_DIR}/matches.parquet'
     ORDER BY hltv_match_id ASC
 """
 ).df()
 
 df["result"] = np.where(df["team1_score"] > df["team2_score"], 0, 1)
-df["is_lan"] = (df["event_type"] == "LAN").astype(int)
-
-# Match format one-hot flags (avoid perfect multicollinearity by only using two in model)
-for col in ["is_bo1", "is_bo3", "is_bo5"]:
-    df[col] = df[col].fillna(0).astype(int)
 
 # Games played per team (no Elo calculation here)
 df["team1_games"] = 0
@@ -90,7 +82,7 @@ rolling_df["swing_diff_l15"] = (
 
 df = df.merge(rolling_df, on="hltv_match_id", how="left")
 
-# Map ELO features per team / per map: keep only per-map elo diffs
+# Map ELO features per team / per map
 map_elo_df = pd.read_parquet(MAP_ELO_FILE)
 
 MAPS_ELO = [
@@ -137,7 +129,7 @@ df["elo_diff"] = df["team1_elo"] - df["team2_elo"]
 filtered_df = df[
     (df["team1_games"] > 10)
     & (df["team2_games"] > 10)
-]
+].reset_index(drop=True)
 
 feature_cols = [
     "elo_diff",
@@ -145,70 +137,70 @@ feature_cols = [
     "swing_diff_l15",
     "team1_rolling_win_rate_l15",
     "team2_rolling_win_rate_l15",
-    "is_lan",
-    # Use only two of the three boX dummies to avoid perfect multicollinearity.
-    # When both are 0, bo1 is the implicit baseline.
-    "is_bo3",
-    "is_bo5",
 ] + map_elo_cols
 
 train_df, test_df = train_test_split(filtered_df, test_size=0.2, shuffle=False)
 train_df = train_df.reset_index(drop=True)
 test_df = test_df.reset_index(drop=True)
 
+# Gradient boosting does not strictly need scaling, but modest scaling can help stability.
 scaler = StandardScaler()
 train_inputs = scaler.fit_transform(train_df[feature_cols])
 test_inputs = scaler.transform(test_df[feature_cols])
 
-train_targets = train_df["result"]
-test_targets = test_df["result"]
+train_targets = train_df["result"].astype(int)
+test_targets = test_df["result"].astype(int)
 
 print(f"Number of training matches: {len(train_df)}")
 print(f"Number of testing matches: {len(test_df)}")
 
-model = LogisticRegression(solver="liblinear")
-model.fit(train_inputs, train_targets)
+# Build DMatrix objects for XGBoost
+dtrain = xgb.DMatrix(train_inputs, label=train_targets, feature_names=feature_cols)
+dtest = xgb.DMatrix(test_inputs, label=test_targets, feature_names=feature_cols)
 
-# --- Feature importance report (coefficient-based) ---
-coef = model.coef_[0]
-coef_df = pd.DataFrame(
-    {
-        "feature": feature_cols,
-        "coef": coef,
-    }
+# XGBoost parameters tuned for betting-style probability calibration / robustness
+params = {
+    "objective": "binary:logistic",
+    "eval_metric": "logloss",  # primary
+    "tree_method": "hist",
+    "max_depth": 5,
+    "eta": 0.05,
+    "subsample": 0.8,
+    "colsample_bytree": 0.8,
+    "min_child_weight": 5,
+    "gamma": 0.0,
+    "lambda": 1.0,
+    "alpha": 0.0,
+    "scale_pos_weight": 1.0,
+}
+
+evals = [(dtrain, "train"), (dtest, "test")]
+
+bst = xgb.train(
+    params,
+    dtrain,
+    num_boost_round=1000,
+    evals=evals,
+    early_stopping_rounds=50,
+    verbose_eval=50,
 )
-coef_df["abs_coef"] = coef_df["coef"].abs()
-coef_df = coef_df.sort_values("abs_coef", ascending=False)
-
-print("\n=== Coefficient report (sorted by |coef|) ===")
-print(coef_df.to_string(index=False, float_format="{:.4f}".format))
-
-# # Simple bar plot for the top-N strongest features
-# TOP_N = 20
-# plot_df = coef_df.head(TOP_N).sort_values("coef")
-
-# plt.figure(figsize=(10, 6))
-# plt.barh(plot_df["feature"], plot_df["coef"])
-# plt.axvline(0, color="black", linewidth=1)
-# plt.title(f"Top {TOP_N} logistic regression coefficients")
-# plt.xlabel("Coefficient (effect on log-odds of team2 win)")
-# plt.tight_layout()
-# plt.show()
 
 
-def evaluate_split(inputs, targets, name: str = ""):
-    probs = model.predict_proba(inputs)[:, 1]
-    ll = log_loss(targets, probs)
-    roc = roc_auc_score(targets, probs)
-    brier = brier_score_loss(targets, probs)
+def evaluate_split(pred_probs, targets, name: str = ""):
+    ll = log_loss(targets, pred_probs)
+    roc = roc_auc_score(targets, pred_probs)
+    brier = brier_score_loss(targets, pred_probs)
     print(f"{name} Log Loss: {ll:.3f}")
     print(f"{name} ROC-AUC: {roc:.3f}")
     print(f"{name} Brier: {brier:.3f}")
     return {"log_loss": ll, "roc_auc": roc, "brier": brier}
 
 
-train_metrics = evaluate_split(train_inputs, train_targets, "Train")
-test_metrics = evaluate_split(test_inputs, test_targets, "Test")
+train_probs = bst.predict(dtrain)
+test_probs = bst.predict(dtest)
+
+train_metrics = evaluate_split(train_probs, train_targets, "Train")
+test_metrics = evaluate_split(test_probs, test_targets, "Test")
 
 print("\n--- Overfit gap (train - test), positive = overfitting ---")
 print(
@@ -224,8 +216,30 @@ print(
     "(overfit if >0.01-0.03)\n"
 )
 
-test_probs = model.predict_proba(test_inputs)[:, 1]
+# Feature importance (gain-based)
+importance_dict = bst.get_score(importance_type="gain")
+fi_rows = []
+for fname in feature_cols:
+    fi_rows.append(
+        {"feature": fname, "importance": importance_dict.get(fname, 0.0)}
+    )
+fi_df = pd.DataFrame(fi_rows)
+fi_df = fi_df.sort_values("importance", ascending=False)
 
+print("\n=== XGBoost feature importance (gain) ===")
+print(fi_df.to_string(index=False, float_format="{:.4f}".format))
+
+TOP_N = 20
+plot_df = fi_df.head(TOP_N).sort_values("importance")
+
+plt.figure(figsize=(10, 6))
+plt.barh(plot_df["feature"], plot_df["importance"])
+plt.title(f"Top {TOP_N} XGBoost feature importances (gain)")
+plt.xlabel("Gain importance")
+plt.tight_layout()
+plt.show()
+
+# Odds-style output for recent matches
 odds_df = test_df[["hltv_match_id", "team1_name", "team2_name", "result"]].copy()
 odds_df["team2_win_prob"] = test_probs
 odds_df["team1_win_prob"] = 1 - test_probs
@@ -251,14 +265,6 @@ if pd.notna(start_idx):
         ].iloc[int(start_idx) : int(start_idx) + 100]
     )
 
-# # Calibration
-# prob_true, prob_pred = calibration_curve(test_targets, test_probs, n_bins=10)
-# plt.plot(prob_pred, prob_true, marker='o')
-# plt.plot([0,1],[0,1],'--')
-# plt.show()
-# for p, t in zip(prob_pred, prob_true):
-#     print(f"{p:.3f} | {t:.3f}")
-
 if SAVE_RESULTS:
     run_data = {
         "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -270,22 +276,12 @@ if SAVE_RESULTS:
         {
             "train_matches": len(train_df),
             "test_matches": len(test_df),
-            "train_log_loss": round(
-                log_loss(train_targets, model.predict_proba(train_inputs)[:, 1]), 4
-            ),
-            "train_roc_auc": round(
-                roc_auc_score(train_targets, model.predict_proba(train_inputs)[:, 1]),
-                4,
-            ),
-            "train_brier": round(
-                brier_score_loss(
-                    train_targets, model.predict_proba(train_inputs)[:, 1]
-                ),
-                4,
-            ),
-            "test_log_loss": round(log_loss(test_targets, test_probs), 4),
-            "test_roc_auc": round(roc_auc_score(test_targets, test_probs), 4),
-            "test_brier": round(brier_score_loss(test_targets, test_probs), 4),
+            "train_log_loss": round(train_metrics["log_loss"], 4),
+            "train_roc_auc": round(train_metrics["roc_auc"], 4),
+            "train_brier": round(train_metrics["brier"], 4),
+            "test_log_loss": round(test_metrics["log_loss"], 4),
+            "test_roc_auc": round(test_metrics["roc_auc"], 4),
+            "test_brier": round(test_metrics["brier"], 4),
         }
     )
 
