@@ -170,6 +170,16 @@ def run_single_map_elo_model(base_df: pd.DataFrame, map_elo_path: str) -> Dict[s
     model = LogisticRegression(solver="liblinear")
     model.fit(train_inputs, train_targets)
 
+    # Coefficient-based feature importance for this run (printed summary, no plots to avoid spam)
+    coef = model.coef_[0]
+    coef_df = pd.DataFrame({"feature": feature_cols, "coef": coef})
+    coef_df["abs_coef"] = coef_df["coef"].abs()
+    coef_df = coef_df.sort_values("abs_coef", ascending=False)
+
+    top_n = min(10, len(coef_df))
+    print(f"\nTop {top_n} features by |coef| for {os.path.basename(map_elo_path)}:")
+    print(coef_df.head(top_n).to_string(index=False, float_format="{:.4f}".format))
+
     def eval_split(inputs, targets):
         probs = model.predict_proba(inputs)[:, 1]
         return {

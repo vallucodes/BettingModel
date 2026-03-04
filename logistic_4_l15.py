@@ -9,7 +9,7 @@ from sklearn.calibration import calibration_curve
 import matplotlib.pyplot as plt
 import os
 
-SAVE_RESULTS = True
+SAVE_RESULTS = False
 RESULTS_FILE = "/media/vallu/Storage/Coding/Own_projects/betting_model/model/results_log.csv"
 RUN_NOTE = "logistic_map_elo_l15_maps_only_190_90_17"
 
@@ -183,6 +183,32 @@ print(f"Number of testing matches: {len(test_df)}")
 
 model = LogisticRegression(solver="liblinear")
 model.fit(train_inputs, train_targets)
+
+# --- Feature importance report (coefficient-based) ---
+coef = model.coef_[0]
+coef_df = pd.DataFrame(
+    {
+        "feature": feature_cols,
+        "coef": coef,
+    }
+)
+coef_df["abs_coef"] = coef_df["coef"].abs()
+coef_df = coef_df.sort_values("abs_coef", ascending=False)
+
+print("\n=== Coefficient report (sorted by |coef|) ===")
+print(coef_df.to_string(index=False, float_format="{:.4f}".format))
+
+# Simple bar plot for the top-N strongest features
+TOP_N = 20
+plot_df = coef_df.head(TOP_N).sort_values("coef")
+
+plt.figure(figsize=(10, 6))
+plt.barh(plot_df["feature"], plot_df["coef"])
+plt.axvline(0, color="black", linewidth=1)
+plt.title(f"Top {TOP_N} logistic regression coefficients")
+plt.xlabel("Coefficient (effect on log-odds of team2 win)")
+plt.tight_layout()
+plt.show()
 
 
 def evaluate_split(inputs, targets, name: str = ""):
