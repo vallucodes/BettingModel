@@ -150,13 +150,13 @@ print(odds_df[['hltv_match_id','team1_name', 'team2_name',
                 'team1_odds', 'team2_odds',
                 'result']].iloc[start_idx:start_idx+100])
 
-# # Calibration
-# prob_true, prob_pred = calibration_curve(test_targets, test_probs, n_bins=10)
-# plt.plot(prob_pred, prob_true, marker='o')
-# plt.plot([0,1],[0,1],'--')
-# plt.show()
-# for p, t in zip(prob_pred, prob_true):
-#     print(f"{p:.3f} | {t:.3f}")
+# Calibration
+prob_true, prob_pred = calibration_curve(test_targets, test_probs, n_bins=10)
+plt.plot(prob_pred, prob_true, marker='o')
+plt.plot([0,1],[0,1],'--')
+plt.show()
+for p, t in zip(prob_pred, prob_true):
+    print(f"{p:.3f} | {t:.3f}")
 
 if SAVE_RESULTS:
     run_data = {'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 'model': RUN_NOTE}
