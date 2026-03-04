@@ -2,12 +2,21 @@ import duckdb
 import pandas as pd
 import numpy as np
 import os
+import re
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 PARQUET_DIR   = "/media/vallu/Storage/Coding/Own_projects/betting_model/vallu_scraper/data/parquet"
 FEATURES_DIR  = "/media/vallu/Storage/Coding/Own_projects/betting_model/vallu_scraper/data/features"
-FEATURES_FILE = "features_map_winrate_l5.parquet"
-WINDOW        = 5
+FEATURES_FILE = "features_map_winrate_l10.parquet"
+
+# Dynamically determine the window size and column suffix from the filename
+window_match = re.search(r'_l(\d+)\.parquet', FEATURES_FILE)
+if window_match:
+    WINDOW = int(window_match.group(1))
+    SUFFIX = f"l{WINDOW}"
+else:
+    raise ValueError(f"Could not determine window size from filename: {FEATURES_FILE}. Expected format: ..._lX.parquet")
+
 VERBOSE_PER_MAP = 2
 BULK_PER_MAP    = 50
 
@@ -80,7 +89,8 @@ def validate_sample(match_id, team_pos, team_name, map_name, verbose=True):
     if row.empty:
         return None, None, "NOT FOUND"
 
-    feature_col = f"{team_pos}_{map_name.lower()}_wr_l5"
+    # Dynamically look for the correct column based on the extracted suffix
+    feature_col = f"{team_pos}_{map_name.lower()}_wr_{SUFFIX}"
     if feature_col not in row.columns:
         return None, None, f"MISSING COL"
 
@@ -100,7 +110,7 @@ def validate_sample(match_id, team_pos, team_name, map_name, verbose=True):
         print(f"  Match ID : {match_id}  |  {team_name} ({team_pos})  |  Map: {map_name}")
         print()
         if last_plays.empty:
-            print("  No prior plays found  ->  expected wr = None")
+            print(f"  No prior plays found  ->  expected wr = None")
         else:
             print(f"  Last {len(last_plays)} plays on {map_name} before this match:")
             print()
@@ -124,14 +134,16 @@ def validate_sample(match_id, team_pos, team_name, map_name, verbose=True):
 
 # ── Run ───────────────────────────────────────────────────────────────────────
 print("\n" + "=" * 68)
-print("  MAP WIN-RATE L5  -  VISUAL VALIDATION")
+# Dynamically update the header
+print(f"  MAP WIN-RATE L{WINDOW}  -  VISUAL VALIDATION")
 print("=" * 68 + "\n")
 
 all_results = []
 
 for map_name in MAPS:
     for team_pos in ['team1', 'team2']:
-        col  = f"{team_pos}_{map_name}_wr_l5"
+        # Dynamically look for the correct column based on the extracted suffix
+        col  = f"{team_pos}_{map_name}_wr_{SUFFIX}"
         if col not in df_features.columns:
             continue
         pool = df_features[df_features[col].notna()]
@@ -187,4 +199,5 @@ if n_mismatch > 0:
         ['match_id', 'team', 'map', 'feature_wr', 'manual_wr']
     ].to_string(index=False))
 else:
-    print("  All samples match - L5 feature looks correct!")
+    # Dynamically update the success message
+    print(f"  All samples match - L{WINDOW} feature looks correct!")
