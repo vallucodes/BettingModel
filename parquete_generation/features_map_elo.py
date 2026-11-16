@@ -18,7 +18,7 @@ con = duckdb.connect()
 map_results = con.execute(f"""
     SELECT
         mp.hltv_match_id,
-        m.date,
+        m.date AS started_at,
         mp.map_name,
         mp.score,
         m.team1_name,
@@ -26,14 +26,14 @@ map_results = con.execute(f"""
     FROM '{PARQUET_DIR}/maps.parquet' mp
     JOIN '{PARQUET_DIR}/matches.parquet' m
         ON mp.hltv_match_id = m.hltv_match_id
-    ORDER BY mp.hltv_match_id ASC
+    ORDER BY started_at ASC NULLS LAST, mp.hltv_match_id ASC, mp.map_number ASC
 """).df()
 map_results['map_name'] = map_results['map_name'].str.lower().str.strip()
 
 matches_df = con.execute(f"""
-    SELECT hltv_match_id, date, team1_name, team2_name
+    SELECT hltv_match_id, date AS started_at, team1_name, team2_name
     FROM '{PARQUET_DIR}/matches.parquet'
-    ORDER BY hltv_match_id ASC
+    ORDER BY started_at ASC NULLS LAST, hltv_match_id ASC
 """).df()
 
 maps_by_match = map_results.groupby('hltv_match_id')
@@ -77,7 +77,7 @@ def build_map_elo_features(high_k: int, low_k: int, threshold: int) -> None:
     matches_df = matches_df.set_index('hltv_match_id')
 
     # Loop all matches
-    for mid, row in matches_df[['date', 'team1_name', 'team2_name']].iterrows():
+    for mid, row in matches_df[['started_at', 'team1_name', 'team2_name']].iterrows():
         team1 = row['team1_name']
         team2 = row['team2_name']
 

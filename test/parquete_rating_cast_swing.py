@@ -29,7 +29,9 @@ STATS_MAP = {
 df_features = pd.read_parquet(os.path.join(FEATURES_DIR, FEATURES_FILE))
 df_features['hltv_match_id'] = df_features['hltv_match_id'].astype(int)
 # Strictly enforce chronological order on the features dataframe
-df_features = df_features.sort_values('hltv_match_id').reset_index(drop=True)
+df_features = df_features.sort_values(
+    ['started_at', 'hltv_match_id'], na_position='last'
+).reset_index(drop=True)
 
 con = duckdb.connect()
 
@@ -40,7 +42,7 @@ base_history = con.execute(f"""
         GROUP BY hltv_match_id
     ),
     team_rows AS (
-        SELECT m.hltv_match_id, m.team1_name AS team_name,
+        SELECT m.hltv_match_id, m.date AS started_at, m.team1_name AS team_name,
                CASE WHEN m.team1_score > m.team2_score THEN 1 ELSE 0 END AS won,
                m.team1_rating_3 AS rating, m.team1_kast_pct AS kast_pct,
                m.team1_swing_pct AS swing_pct, r.total_rounds
@@ -49,7 +51,7 @@ base_history = con.execute(f"""
 
         UNION ALL
 
-        SELECT m.hltv_match_id, m.team2_name AS team_name,
+        SELECT m.hltv_match_id, m.date AS started_at, m.team2_name AS team_name,
                CASE WHEN m.team2_score > m.team1_score THEN 1 ELSE 0 END AS won,
                m.team2_rating_3 AS rating, m.team2_kast_pct AS kast_pct,
                m.team2_swing_pct AS swing_pct, r.total_rounds
@@ -57,12 +59,14 @@ base_history = con.execute(f"""
         JOIN round_counts r ON m.hltv_match_id = r.hltv_match_id
     )
     SELECT * FROM team_rows
-    ORDER BY hltv_match_id ASC
+    ORDER BY started_at ASC NULLS LAST, hltv_match_id ASC
 """).df()
 
 base_history['hltv_match_id'] = base_history['hltv_match_id'].astype(int)
 # Double enforce chronological sorting in pandas
-base_history = base_history.sort_values(['team_name', 'hltv_match_id']).reset_index(drop=True)
+base_history = base_history.sort_values(
+    ['team_name', 'started_at', 'hltv_match_id'], na_position='last'
+).reset_index(drop=True)
 
 print(f"Loaded {len(df_features)} feature rows, {len(base_history)} base history rows")
 
@@ -70,11 +74,19 @@ print(f"Loaded {len(df_features)} feature rows, {len(base_history)} base history
 # ── Manual recompute ──────────────────────────────────────────────────────────
 def compute_manual_stats(team, match_id):
     mid = int(match_id)
-    # Strictly filter by matches chronologically older than the current match ID
+    match_started_at = df_features.loc[
+        df_features['hltv_match_id'] == mid, 'started_at'
+    ].iloc[0]
     plays = base_history[
         (base_history['team_name'] == team) &
-        (base_history['hltv_match_id'] < mid)
-    ].sort_values('hltv_match_id')
+        (
+            (base_history['started_at'] < match_started_at) |
+            (
+                (base_history['started_at'] == match_started_at) &
+                (base_history['hltv_match_id'] < mid)
+            )
+        )
+    ].sort_values(['started_at', 'hltv_match_id'], na_position='last')
 
     if plays.empty:
         return {s: None for s in STATS_MAP.keys()}, pd.DataFrame()

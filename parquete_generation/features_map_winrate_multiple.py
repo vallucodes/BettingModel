@@ -11,11 +11,11 @@ def load_base_data():
     con = duckdb.connect()
 
     map_results = con.execute(f"""
-        SELECT mp.hltv_match_id, m.date, mp.map_name, mp.score,
+        SELECT mp.hltv_match_id, m.date AS started_at, mp.map_name, mp.score,
                m.team1_name, m.team2_name, m.team1_score, m.team2_score
         FROM '{PARQUET_DIR}/maps.parquet' mp
         JOIN '{PARQUET_DIR}/matches.parquet' m ON mp.hltv_match_id = m.hltv_match_id
-        ORDER BY m.hltv_match_id ASC
+        ORDER BY started_at ASC NULLS LAST, m.hltv_match_id ASC, mp.map_number ASC
     """).df()
 
     def parse_map_winner(row):
@@ -30,11 +30,11 @@ def load_base_data():
 
     map_results['map_winner'], map_results['map_loser'] = zip(*map_results.apply(parse_map_winner, axis=1))
 
-    winner_rows = map_results[['hltv_match_id', 'map_name', 'map_winner']].copy()
+    winner_rows = map_results[['hltv_match_id', 'started_at', 'map_name', 'map_winner']].copy()
     winner_rows['team_name'] = winner_rows['map_winner']
     winner_rows['map_won'] = 1
 
-    loser_rows = map_results[['hltv_match_id', 'map_name', 'map_loser']].copy()
+    loser_rows = map_results[['hltv_match_id', 'started_at', 'map_name', 'map_loser']].copy()
     loser_rows['team_name'] = loser_rows['map_loser']
     loser_rows['map_won'] = 0
 
@@ -44,9 +44,9 @@ def load_base_data():
     ]).dropna(subset=['team_name'])
 
     matches_df = con.execute(f"""
-        SELECT hltv_match_id, date, team1_name, team2_name
+        SELECT hltv_match_id, date AS started_at, team1_name, team2_name
         FROM '{PARQUET_DIR}/matches.parquet'
-        ORDER BY hltv_match_id ASC
+        ORDER BY started_at ASC NULLS LAST, hltv_match_id ASC
     """).df()
 
     con.close()
@@ -56,8 +56,12 @@ def generate_map_winrates(window_size, team_map_rows, matches_df):
     """Calculates rolling winrates for a specific window size and saves to parquet."""
     print(f"🔄 Processing rolling map winrates for l{window_size}...")
 
-    team1_matches = matches_df[['hltv_match_id', 'team1_name']].rename(columns={'team1_name': 'team_name'})
-    team2_matches = matches_df[['hltv_match_id', 'team2_name']].rename(columns={'team2_name': 'team_name'})
+    team1_matches = matches_df[
+        ['hltv_match_id', 'started_at', 'team1_name']
+    ].rename(columns={'team1_name': 'team_name'})
+    team2_matches = matches_df[
+        ['hltv_match_id', 'started_at', 'team2_name']
+    ].rename(columns={'team2_name': 'team_name'})
     team_matches = pd.concat([team1_matches, team2_matches]).drop_duplicates()
 
     maps = ['ancient', 'anubis', 'cache', 'dust2', 'inferno', 'mirage', 'nuke', 'overpass', 'train', 'vertigo']
@@ -65,7 +69,10 @@ def generate_map_winrates(window_size, team_map_rows, matches_df):
     tm = team_map_rows.copy()
     tm['map_name'] = tm['map_name'].str.lower()
     tm = tm[tm['map_name'].isin(maps)]
-    tm = tm.sort_values(['team_name', 'map_name', 'hltv_match_id'])
+    tm = tm.sort_values(
+        ['team_name', 'map_name', 'started_at', 'hltv_match_id'],
+        na_position='last',
+    )
 
     # Dynamic column name based on window size
     wr_col = f'wr_l{window_size}'
@@ -75,14 +82,21 @@ def generate_map_winrates(window_size, team_map_rows, matches_df):
     )
 
     map_states = tm.pivot_table(
-        index=['team_name', 'hltv_match_id'],
+        index=['team_name', 'started_at', 'hltv_match_id'],
         columns='map_name',
         values=wr_col,
         aggfunc='last'
     ).reset_index()
 
-    all_team_matches = team_matches.sort_values(['team_name', 'hltv_match_id'])
-    team_history = pd.merge(all_team_matches, map_states, on=['team_name', 'hltv_match_id'], how='left')
+    all_team_matches = team_matches.sort_values(
+        ['team_name', 'started_at', 'hltv_match_id'], na_position='last'
+    )
+    team_history = pd.merge(
+        all_team_matches,
+        map_states,
+        on=['team_name', 'started_at', 'hltv_match_id'],
+        how='left',
+    )
 
     map_cols = [m for m in maps if m in team_history.columns]
 
@@ -108,7 +122,9 @@ def generate_map_winrates(window_size, team_map_rows, matches_df):
     t2_history = team_history[['hltv_match_id', 'team_name'] + maps].rename(columns=t2_rename)
     features_df = pd.merge(features_df, t2_history, on=['hltv_match_id', 'team2_name'], how='left')
 
-    features_df = features_df.sort_values('hltv_match_id').reset_index(drop=True)
+    features_df = features_df.sort_values(
+        ['started_at', 'hltv_match_id'], na_position='last'
+    ).reset_index(drop=True)
 
     output_path = os.path.join(FEATURES_DIR, f"features_map_winrate_l{window_size}.parquet")
     features_df.to_parquet(output_path, index=False)

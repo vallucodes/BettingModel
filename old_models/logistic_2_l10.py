@@ -21,7 +21,7 @@ con = duckdb.connect()
 df = con.execute(f"""
     SELECT hltv_match_id, team1_name, team2_name, team1_score, team2_score
     FROM '{PARQUET_DIR}/matches.parquet'
-    ORDER BY hltv_match_id ASC
+    ORDER BY date ASC NULLS LAST, hltv_match_id ASC
 """).df()
 
 df['result'] = np.where(df['team1_score'] > df['team2_score'], 0, 1)

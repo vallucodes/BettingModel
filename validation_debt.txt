@@ -1,1 +1,10 @@
 Schemas for feature parquets
+
+
+Results
+
+xgboost1 before new parquet files (6, 2, 0,1)
+Test: LL=0.6282, ROC=0.6909, Brier=0.2193
+
+xgboost2 before new parquet files (6, 2, 0,1)
+Test:  LL=0.6275, ROC=0.6891, Brier=0.2191

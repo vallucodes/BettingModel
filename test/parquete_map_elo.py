@@ -4,7 +4,7 @@ FEATURES_DIR = "/media/vallu/Storage/Coding/Own_projects/betting_model/vallu_scr
 
 df = pd.read_parquet(f"{FEATURES_DIR}/features_map_elo.parquet")
 
-df = df.sort_values('hltv_match_id')
+df = df.sort_values(['started_at', 'hltv_match_id'], na_position='last')
 
 cols = [
     'hltv_match_id', 'team1_name', 'team2_name',

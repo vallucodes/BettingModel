@@ -18,7 +18,7 @@ def load_base_data():
             GROUP BY hltv_match_id
         ),
         team_rows AS (
-            SELECT m.hltv_match_id, m.date, m.team1_name AS team_name, 'team1' AS side,
+            SELECT m.hltv_match_id, m.date AS started_at, m.team1_name AS team_name, 'team1' AS side,
                    CASE WHEN m.team1_score > m.team2_score THEN 1 ELSE 0 END AS won,
                    m.team1_rating_3 AS rating, m.team1_kast_pct AS kast_pct,
                    m.team1_swing_pct AS swing_pct, r.total_rounds
@@ -27,7 +27,7 @@ def load_base_data():
 
             UNION ALL
 
-            SELECT m.hltv_match_id, m.date, m.team2_name AS team_name, 'team2' AS side,
+            SELECT m.hltv_match_id, m.date AS started_at, m.team2_name AS team_name, 'team2' AS side,
                    CASE WHEN m.team2_score > m.team1_score THEN 1 ELSE 0 END AS won,
                    m.team2_rating_3 AS rating, m.team2_kast_pct AS kast_pct,
                    m.team2_swing_pct AS swing_pct, r.total_rounds
@@ -38,14 +38,16 @@ def load_base_data():
     """).df()
 
     # Strict chronological sort for rolling math
-    team_match_stats = team_match_stats.sort_values(['team_name', 'hltv_match_id']).reset_index(drop=True)
+    team_match_stats = team_match_stats.sort_values(
+        ['team_name', 'started_at', 'hltv_match_id'], na_position='last'
+    ).reset_index(drop=True)
 
     matches_df = con.execute(f"""
-        SELECT hltv_match_id, date, team1_name, team2_name,
+        SELECT hltv_match_id, date AS started_at, team1_name, team2_name,
                team1_score, team2_score, event_type,
                CASE WHEN team1_score > team2_score THEN 0 ELSE 1 END AS target_match_winner
         FROM '{PARQUET_DIR}/matches.parquet'
-        ORDER BY hltv_match_id ASC
+        ORDER BY started_at ASC NULLS LAST, hltv_match_id ASC
     """).df()
 
     con.close()
@@ -120,7 +122,9 @@ def generate_rolling_features(window_size, base_team_stats, base_matches):
     features_df = features_df.merge(t1_stats, on='hltv_match_id', how='left') \
                            .merge(t2_stats, on='hltv_match_id', how='left')
 
-    features_df = features_df.sort_values('hltv_match_id').reset_index(drop=True)
+    features_df = features_df.sort_values(
+        ['started_at', 'hltv_match_id'], na_position='last'
+    ).reset_index(drop=True)
 
     # Save
     output_path = os.path.join(FEATURES_DIR, f"features_rolling_l{window_size}.parquet")

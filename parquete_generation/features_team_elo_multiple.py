@@ -36,12 +36,13 @@ def load_matches() -> pd.DataFrame:
         f"""
         SELECT
             hltv_match_id,
+            date AS started_at,
             team1_name,
             team2_name,
             team1_score,
             team2_score
         FROM '{PARQUET_DIR}/matches.parquet'
-        ORDER BY hltv_match_id ASC
+        ORDER BY started_at ASC NULLS LAST, hltv_match_id ASC
     """
     ).df()
     con.close()
@@ -57,6 +58,9 @@ def compute_team_elo_features(
     Compute team1 / team2 Elo trajectories for a given (HIGH_K, LOW_K, THRESHOLD)
     configuration and return a dataframe with one row per match.
     """
+    matches_df = matches_df.sort_values(
+        ["started_at", "hltv_match_id"], na_position="last"
+    ).reset_index(drop=True)
     n = len(matches_df)
     team1_elo_vals = np.empty(n, dtype=float)
     team2_elo_vals = np.empty(n, dtype=float)
@@ -93,7 +97,7 @@ def compute_team_elo_features(
         elo_state[team1]["games_played"] += 1
         elo_state[team2]["games_played"] += 1
 
-    out_df = matches_df[["hltv_match_id"]].copy()
+    out_df = matches_df[["hltv_match_id", "started_at"]].copy()
     out_df["team1_elo"] = team1_elo_vals
     out_df["team2_elo"] = team2_elo_vals
     return out_df

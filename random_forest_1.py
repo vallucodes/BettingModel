@@ -37,7 +37,7 @@ df = con.execute(
         team1_score,
         team2_score
     FROM '{PARQUET_DIR}/matches.parquet'
-    ORDER BY hltv_match_id ASC
+    ORDER BY date ASC NULLS LAST, hltv_match_id ASC
 """
 ).df()
 

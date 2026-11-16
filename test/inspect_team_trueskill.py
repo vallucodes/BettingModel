@@ -20,12 +20,13 @@ def load_matches() -> pd.DataFrame:
         f"""
         SELECT
             hltv_match_id,
+            date AS started_at,
             team1_name,
             team2_name,
             team1_score,
             team2_score
         FROM '{PARQUET_DIR}/matches.parquet'
-        ORDER BY hltv_match_id ASC
+        ORDER BY started_at ASC NULLS LAST, hltv_match_id ASC
     """
     ).df()
     con.close()
@@ -68,7 +69,12 @@ def compute_latest_team_ratings(features_df: pd.DataFrame, matches_df: pd.DataFr
     team_df = pd.DataFrame.from_records(records)
     # Latest rating per team (strictly before that team's last match)
     latest = (
-        team_df.sort_values("hltv_match_id")
+        team_df.merge(
+            matches_df[["hltv_match_id", "started_at"]],
+            on="hltv_match_id",
+            how="left",
+        )
+        .sort_values(["started_at", "hltv_match_id"], na_position="last")
         .groupby("team", as_index=False)
         .tail(1)
     )
@@ -79,7 +85,9 @@ def compute_latest_team_ratings(features_df: pd.DataFrame, matches_df: pd.DataFr
 
 def build_last_50_matches_table(features_df: pd.DataFrame, matches_df: pd.DataFrame) -> pd.DataFrame:
     merged = features_df.merge(matches_df, on="hltv_match_id", how="left", validate="one_to_one")
-    merged = merged.sort_values("hltv_match_id")
+    merged = merged.sort_values(
+        ["started_at", "hltv_match_id"], na_position="last"
+    )
     last_50 = merged.tail(50).copy()
 
     cols = [

@@ -10,8 +10,9 @@ CONFIDENCE_MASK = 0.5
 raw_df = pd.read_json('data/matches.json')
 
 df = (
-    raw_df[['hltv_match_id', 'team1_name', 'team2_name', 'team1_score', 'team2_score']]
-      .sort_values(by='hltv_match_id', ascending=True)
+    raw_df[['date', 'hltv_match_id', 'team1_name', 'team2_name', 'team1_score', 'team2_score']]
+      .sort_values(by=['date', 'hltv_match_id'], ascending=True, na_position='last')
+      .drop(columns=['date'])
       .drop(columns='hltv_match_id')
       .reset_index(drop=True)
 )

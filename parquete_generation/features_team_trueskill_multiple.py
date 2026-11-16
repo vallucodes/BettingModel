@@ -25,12 +25,13 @@ def load_matches() -> pd.DataFrame:
         f"""
         SELECT
             hltv_match_id,
+            date AS started_at,
             team1_name,
             team2_name,
             team1_score,
             team2_score
         FROM '{PARQUET_DIR}/matches.parquet'
-        ORDER BY hltv_match_id ASC
+        ORDER BY started_at ASC NULLS LAST, hltv_match_id ASC
     """
     ).df()
     con.close()
@@ -53,6 +54,10 @@ def compute_team_trueskill_features(
     We expose mu (mean), sigma (uncertainty), and a conservative rating
     (mu - 3 * sigma) as features.
     """
+    matches_df = matches_df.sort_values(
+        ["started_at", "hltv_match_id"], na_position="last"
+    ).reset_index(drop=True)
+
     # No draws → draw_probability=0.0
     env = TrueSkill(
         mu=START_MU,
@@ -104,7 +109,7 @@ def compute_team_trueskill_features(
         rating_state[team1] = new_r1
         rating_state[team2] = new_r2
 
-    out_df = matches_df[["hltv_match_id"]].copy()
+    out_df = matches_df[["hltv_match_id", "started_at"]].copy()
     out_df["team1_trueskill_mu"] = team1_mu_vals
     out_df["team2_trueskill_mu"] = team2_mu_vals
     out_df["team1_trueskill_sigma"] = team1_sigma_vals

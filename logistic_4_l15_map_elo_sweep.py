@@ -33,7 +33,7 @@ def build_base_dataframe() -> pd.DataFrame:
         f"""
         SELECT hltv_match_id, team1_name, team2_name, team1_score, team2_score, event_type
         FROM '{PARQUET_DIR}/matches.parquet'
-        ORDER BY hltv_match_id ASC
+        ORDER BY date ASC NULLS LAST, hltv_match_id ASC
     """
     ).df()
 

@@ -41,7 +41,7 @@ df = con.execute(
         is_bo3,
         is_bo5
     FROM '{PARQUET_DIR}/matches.parquet'
-    ORDER BY hltv_match_id ASC
+    ORDER BY date ASC NULLS LAST, hltv_match_id ASC
 """
 ).df()
 

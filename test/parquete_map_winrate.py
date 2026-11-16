@@ -31,11 +31,11 @@ con = duckdb.connect()
 
 map_results = con.execute(f"""
     SELECT CAST(mp.hltv_match_id AS BIGINT) AS hltv_match_id,
-           mp.map_name, mp.score,
+           m.date AS started_at, mp.map_name, mp.score,
            m.team1_name, m.team2_name
     FROM '{PARQUET_DIR}/maps.parquet' mp
     JOIN '{PARQUET_DIR}/matches.parquet' m ON mp.hltv_match_id = m.hltv_match_id
-    ORDER BY mp.hltv_match_id
+    ORDER BY started_at ASC NULLS LAST, mp.hltv_match_id ASC, mp.map_number ASC
 """).df()
 
 map_results['map_name']      = map_results['map_name'].str.lower().str.strip()
@@ -51,15 +51,18 @@ for _, r in map_results.iterrows():
     if t1s == t2s:
         continue
     t1w = 1 if t1s > t2s else 0
-    rows.append({'hltv_match_id': int(r['hltv_match_id']), 'map_name': r['map_name'],
+    rows.append({'hltv_match_id': int(r['hltv_match_id']), 'started_at': r['started_at'], 'map_name': r['map_name'],
                  'team_name': r['team1_name'], 'map_won': t1w})
-    rows.append({'hltv_match_id': int(r['hltv_match_id']), 'map_name': r['map_name'],
+    rows.append({'hltv_match_id': int(r['hltv_match_id']), 'started_at': r['started_at'], 'map_name': r['map_name'],
                  'team_name': r['team2_name'], 'map_won': 1 - t1w})
 
 team_map_rows = (
     pd.DataFrame(rows)
     .dropna(subset=['team_name'])
-    .sort_values(['team_name', 'map_name', 'hltv_match_id'])
+    .sort_values(
+        ['team_name', 'map_name', 'started_at', 'hltv_match_id'],
+        na_position='last',
+    )
     .reset_index(drop=True)
 )
 team_map_rows['hltv_match_id'] = team_map_rows['hltv_match_id'].astype(int)
@@ -70,11 +73,20 @@ print(f"Loaded {len(df_features)} feature rows, {len(team_map_rows)} team-map hi
 # ── Manual recompute ──────────────────────────────────────────────────────────
 def compute_manual_wr(team, map_name, match_id):
     mid = int(match_id)
+    match_started_at = df_features.loc[
+        df_features['hltv_match_id'] == mid, 'started_at'
+    ].iloc[0]
     plays = team_map_rows[
         (team_map_rows['team_name']     == team) &
         (team_map_rows['map_name']      == map_name.lower()) &
-        (team_map_rows['hltv_match_id'] <  mid)
-    ].sort_values('hltv_match_id')
+        (
+            (team_map_rows['started_at'] < match_started_at) |
+            (
+                (team_map_rows['started_at'] == match_started_at) &
+                (team_map_rows['hltv_match_id'] < mid)
+            )
+        )
+    ].sort_values(['started_at', 'hltv_match_id'], na_position='last')
 
     if plays.empty:
         return None, pd.DataFrame()

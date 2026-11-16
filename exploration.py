@@ -82,8 +82,8 @@ def get_map_slot_counts(parquet_dir: str = PARQUET_DIR) -> pd.DataFrame:
 def main():
     # Load matches parquet
     df = pd.read_parquet(f"{PARQUET_DIR}/matches.parquet")[
-        ["hltv_match_id", "team1_name", "team2_name", "team1_score", "team2_score"]
-    ].sort_values("hltv_match_id")
+        ["date", "hltv_match_id", "team1_name", "team2_name", "team1_score", "team2_score"]
+    ].sort_values(["date", "hltv_match_id"], na_position="last")
 
     # Binary outcome from team1 perspective: 1 = team1 win, 0 = team2 win
     df["team1_win"] = (df["team1_score"] > df["team2_score"]).astype(int)
