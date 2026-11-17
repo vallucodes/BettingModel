@@ -16,10 +16,7 @@ RUN_NOTE = "rf_l15_map_190_90_17_team_130_50_25"
 
 PARQUET_DIR = "/media/vallu/Storage/Coding/Own_projects/betting_model/vallu_scraper/data/parquet"
 FEATURES_DIR = "/media/vallu/Storage/Coding/Own_projects/betting_model/vallu_scraper/data/features"
-MAP_ELO_FILE = (
-    "/media/vallu/Storage/Coding/Own_projects/betting_model/"
-    "vallu_scraper/data/features/map_elo/features_map_elo_190_90_17.parquet"
-)
+MAP_ELO_FILE = os.path.join(FEATURES_DIR, "features_map_elo_190_90_17.parquet")
 TEAM_ELO_FILE = (
     "/media/vallu/Storage/Coding/Own_projects/betting_model/"
     "vallu_scraper/data/features/team_elo/features_team_elo_130_50_25.parquet"

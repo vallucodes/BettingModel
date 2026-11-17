@@ -1,9 +1,25 @@
+"""Generate historical map-specific Elo features for each match.
+
+Reads matches.parquet and maps.parquet from vallu_scraper/data/parquet, then
+writes one features_map_elo_<high_k>_<low_k>_<threshold>.parquet file per
+configured parameter combination to vallu_scraper/data/features.
+
+Usage, from the project root:
+    python model/feature_generation/features_map_elo.py
+
+The parameter grids are defined at the bottom of this file; no arguments are
+required. Existing combinations are regenerated, and obsolete map-Elo files
+are removed after a successful sweep.
+"""
+
 import duckdb
 import pandas as pd
 import numpy as np
 import os
 from collections import defaultdict
 from concurrent.futures import ProcessPoolExecutor, as_completed
+
+from feature_output_cleanup import remove_stale_outputs
 
 PARQUET_DIR = "/media/vallu/Storage/Coding/Own_projects/betting_model/vallu_scraper/data/parquet"
 FEATURES_DIR = "/media/vallu/Storage/Coding/Own_projects/betting_model/vallu_scraper/data/features"
@@ -138,11 +154,6 @@ def build_map_elo_features(high_k: int, low_k: int, threshold: int) -> None:
     filename = f"features_map_elo_{high_k}_{low_k}_{threshold}.parquet"
     output_path = os.path.join(FEATURES_DIR, filename)
 
-    # Safety: if file already exists, skip (supports reruns / partial runs)
-    if os.path.exists(output_path):
-        print(f"⏭️ Skipping existing file {output_path}")
-        return
-
     matches_df.to_parquet(output_path, index=False)
     print(f"✅ Saved {len(matches_df)} rows → {output_path}")
 
@@ -156,13 +167,11 @@ if __name__ == "__main__":
     for h in high_k_values:
         for l in low_k_values:
             for t in threshold_values:
-                filename = f"features_map_elo_{h}_{l}_{t}.parquet"
-                path = os.path.join(FEATURES_DIR, filename)
-                if os.path.exists(path):
-                    print(f"Already have {filename}, skipping in queue build.")
-                    continue
                 combos.append((h, l, t))
     total = len(combos)
+    expected_filenames = {
+        f"features_map_elo_{h}_{l}_{t}.parquet" for h, l, t in combos
+    }
     print(f"Total combinations to run: {total}")
 
     # Use multiple processes to parallelize over parameter combinations,
@@ -177,10 +186,19 @@ if __name__ == "__main__":
             for (h, l, t) in combos
         }
 
+        failed = False
         for i, future in enumerate(as_completed(future_to_params), start=1):
             h, l, t = future_to_params[future]
             try:
                 future.result()
                 print(f"[{i}/{total}] Done HIGH_K={h}, LOW_K={l}, THRESHOLD={t}")
             except Exception as e:
+                failed = True
                 print(f"[{i}/{total}] FAILED HIGH_K={h}, LOW_K={l}, THRESHOLD={t}: {e}")
+
+        if failed:
+            print("Some combinations failed; preserving stale map Elo files.")
+        else:
+            remove_stale_outputs(
+                FEATURES_DIR, "features_map_elo_", ".parquet", expected_filenames
+            )

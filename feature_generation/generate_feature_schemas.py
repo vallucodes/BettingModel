@@ -1,6 +1,21 @@
+"""Write column-name schema text files for top-level feature Parquet files.
+
+Reads feature Parquet files directly under vallu_scraper/data/features and
+writes one schema_<feature>.txt file per logical feature family in that same
+directory. Parquet files in subdirectories are not included.
+
+Usage, from the project root:
+    python feature_generation/generate_feature_schemas.py
+
+No arguments are required. Existing selected schemas are refreshed, and
+obsolete schema files are removed after successful generation.
+"""
+
 import os
 import re
 import pandas as pd
+
+from feature_output_cleanup import remove_stale_outputs
 
 FEATURES_DIR = "/media/vallu/Storage/Coding/Own_projects/betting_model/vallu_scraper/data/features"
 
@@ -78,14 +93,14 @@ def main() -> None:
     print(f"Found {len(raw_files)} parquet files in {FEATURES_DIR}")
     print(f"Building schemas for {len(files)} logical families.")
 
+    expected_schema_files = {
+        f"schema_{os.path.splitext(fname)[0]}.txt" for fname in files
+    }
+    failed = False
     for fname in files:
         full_path = os.path.join(FEATURES_DIR, fname)
         base = os.path.splitext(fname)[0]
         txt_path = os.path.join(FEATURES_DIR, f"schema_{base}.txt")
-
-        if os.path.exists(txt_path):
-            print(f"⏭️  Text schema already exists for {fname}: {os.path.basename(txt_path)}, skipping.")
-            continue
 
         print(f"Building text schema for {fname} → {os.path.basename(txt_path)}")
         try:
@@ -100,7 +115,13 @@ def main() -> None:
                 f"{txt_path}"
             )
         except Exception as e:
+            failed = True
             print(f"❌ Failed to build schema for {fname}: {e}")
+
+    if failed:
+        print("Some schemas failed; preserving stale schema files.")
+    else:
+        remove_stale_outputs(FEATURES_DIR, "schema_", ".txt", expected_schema_files)
 
 
 if __name__ == "__main__":

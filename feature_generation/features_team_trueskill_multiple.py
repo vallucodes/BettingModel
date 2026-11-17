@@ -1,3 +1,17 @@
+"""Generate pre-match team TrueSkill features over a parameter grid.
+
+Reads matches.parquet from vallu_scraper/data/parquet and writes
+features_team_trueskill_<sigma>_<beta>_<tau>.parquet files to
+vallu_scraper/data/features/team_trueskill.
+
+Usage, from the project root:
+    python feature_generation/features_team_trueskill_multiple.py
+
+The parameter grids are defined in main(); no arguments are required.
+Existing combinations are regenerated, and obsolete TrueSkill files are
+removed after a successful sweep.
+"""
+
 import os
 from typing import Iterable, Tuple
 from concurrent.futures import ProcessPoolExecutor, as_completed
@@ -7,12 +21,14 @@ import numpy as np
 import pandas as pd
 from trueskill import TrueSkill, Rating
 
+from feature_output_cleanup import remove_stale_outputs
+
 
 PARQUET_DIR = "/media/vallu/Storage/Coding/Own_projects/betting_model/vallu_scraper/data/parquet"
 FEATURES_DIR = "/media/vallu/Storage/Coding/Own_projects/betting_model/vallu_scraper/data/features"
-TEAM_ELO_DIR = os.path.join(FEATURES_DIR, "team_trueskill")
+TEAM_TRUESKILL_DIR = os.path.join(FEATURES_DIR, "team_trueskill")
 
-os.makedirs(TEAM_ELO_DIR, exist_ok=True)
+os.makedirs(TEAM_TRUESKILL_DIR, exist_ok=True)
 
 # Default TrueSkill configuration (can be changed)
 START_MU = 25.0
@@ -129,12 +145,7 @@ def build_team_trueskill_features(
     features_team_trueskill_SIGMA_BETA_TAU.parquet.
     """
     filename = f"features_team_trueskill_{sigma:.3f}_{beta:.3f}_{tau:.3f}.parquet"
-    # Keep TrueSkill files under the same 'team_elo' subdirectory for consistency
-    output_path = os.path.join(TEAM_ELO_DIR, filename)
-
-    if os.path.exists(output_path):
-        print(f"⏭️ Skipping existing file {output_path}")
-        return
+    output_path = os.path.join(TEAM_TRUESKILL_DIR, filename)
 
     matches_df = load_matches()
     out_df = compute_team_trueskill_features(matches_df, sigma, beta, tau)
@@ -169,14 +180,13 @@ def main() -> None:
     for s in sigma_values:
         for b in beta_values:
             for t in tau_values:
-                filename = f"features_team_trueskill_{s:.3f}_{b:.3f}_{t:.3f}.parquet"
-                path = os.path.join(TEAM_ELO_DIR, filename)
-                if os.path.exists(path):
-                    print(f"Already have {filename}, skipping in queue build.")
-                    continue
                 combos.append((s, b, t))
 
     total = len(combos)
+    expected_filenames = {
+        f"features_team_trueskill_{s:.3f}_{b:.3f}_{t:.3f}.parquet"
+        for s, b, t in combos
+    }
     print(f"Total combinations to run: {total}")
 
     cpu_count = os.cpu_count() or 4
@@ -192,6 +202,7 @@ def main() -> None:
             for (s, b, t) in combos
         }
 
+        failed = False
         for i, future in enumerate(as_completed(future_to_params), start=1):
             s, b, t = future_to_params[future]
             try:
@@ -201,10 +212,22 @@ def main() -> None:
                     f"BETA={b:.3f}, TAU={t:.3f}"
                 )
             except Exception as e:
+                failed = True
                 print(
                     f"[{i}/{total}] FAILED SIGMA={s:.3f}, "
                     f"BETA={b:.3f}, TAU={t:.3f}: {e}"
                 )
+
+        if failed:
+            print("Some combinations failed; preserving stale TrueSkill files.")
+        else:
+            remove_stale_outputs(
+                FEATURES_DIR,
+                "features_team_trueskill_",
+                ".parquet",
+                expected_filenames,
+                expected_output_dir=TEAM_TRUESKILL_DIR,
+            )
 
 
 if __name__ == "__main__":

@@ -1,6 +1,22 @@
+"""Generate rolling per-map win-rate features for both teams in each match.
+
+Reads matches.parquet and maps.parquet from vallu_scraper/data/parquet, then
+writes features_map_winrate_l<window>.parquet files to
+vallu_scraper/data/features for the configured windows.
+
+Usage, from the project root:
+    python feature_generation/features_map_winrate_multiple.py
+
+The window sizes are configured at the bottom of this file; no arguments are
+required. Existing selected files are overwritten, and obsolete map-win-rate
+files are removed after successful generation.
+"""
+
 import duckdb
 import pandas as pd
 import os
+
+from feature_output_cleanup import remove_stale_outputs
 
 PARQUET_DIR = "/media/vallu/Storage/Coding/Own_projects/betting_model/vallu_scraper/data/parquet"
 FEATURES_DIR = "/media/vallu/Storage/Coding/Own_projects/betting_model/vallu_scraper/data/features"
@@ -39,8 +55,8 @@ def load_base_data():
     loser_rows['map_won'] = 0
 
     team_map_rows = pd.concat([
-        winner_rows[['hltv_match_id', 'map_name', 'team_name', 'map_won']],
-        loser_rows[['hltv_match_id', 'map_name', 'team_name', 'map_won']]
+        winner_rows[['hltv_match_id', 'started_at', 'map_name', 'team_name', 'map_won']],
+        loser_rows[['hltv_match_id', 'started_at', 'map_name', 'team_name', 'map_won']]
     ]).dropna(subset=['team_name'])
 
     matches_df = con.execute(f"""
@@ -143,3 +159,10 @@ if __name__ == "__main__":
 
     for w in windows_to_generate:
         generate_map_winrates(w, base_team_maps, base_matches)
+
+    remove_stale_outputs(
+        FEATURES_DIR,
+        "features_map_winrate_l",
+        ".parquet",
+        {f"features_map_winrate_l{w}.parquet" for w in windows_to_generate},
+    )

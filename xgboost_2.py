@@ -16,15 +16,12 @@ PARQUET_DIR = (
 FEATURES_ROOT = (
     "/media/vallu/Storage/Coding/Own_projects/betting_model/vallu_scraper/data/features"
 )
-MAP_ELO_FILE = (
-    "/media/vallu/Storage/Coding/Own_projects/betting_model/"
-    "vallu_scraper/data/features/map_elo/features_map_elo_190_90_17.parquet"
-)
+MAP_ELO_FILE = os.path.join(FEATURES_ROOT, "features_map_elo_190_90_17.parquet")
 # Single TrueSkill features parquet to use (no sweeping)
 TRUESKILL_FILE = os.path.join(
     FEATURES_ROOT,
     "team_trueskill",
-    "features_team_trueskill_6.000_2.000_0.100.parquet",
+    "features_team_trueskill_15.000_8.000_0.500.parquet",
 )
 
 TRAIN_FRACTION = 0.70

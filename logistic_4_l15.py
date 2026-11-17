@@ -3,6 +3,7 @@ import numpy as np
 import duckdb
 from sklearn.model_selection import train_test_split
 from sklearn.linear_model import LogisticRegression
+from sklearn.impute import SimpleImputer
 from sklearn.metrics import log_loss, roc_auc_score, brier_score_loss
 from datetime import datetime
 from sklearn.calibration import calibration_curve
@@ -12,17 +13,15 @@ from sklearn.preprocessing import StandardScaler
 
 SAVE_RESULTS = False
 RESULTS_FILE = "/media/vallu/Storage/Coding/Own_projects/betting_model/model/results_log.csv"
-RUN_NOTE = "logistic_l15_map_190_90_17_team_130_50_25"
+RUN_NOTE = "logistic_l15_map_190_90_17_trueskill_15_8_0.5"
 
 PARQUET_DIR = "/media/vallu/Storage/Coding/Own_projects/betting_model/vallu_scraper/data/parquet"
 FEATURES_DIR = "/media/vallu/Storage/Coding/Own_projects/betting_model/vallu_scraper/data/features"
-MAP_ELO_FILE = (
+MAP_ELO_FILE = os.path.join(FEATURES_DIR, "features_map_elo_190_90_17.parquet")
+TRUESKILL_FILE = (
     "/media/vallu/Storage/Coding/Own_projects/betting_model/"
-    "vallu_scraper/data/features/map_elo/features_map_elo_190_90_17.parquet"
-)
-TEAM_ELO_FILE = (
-    "/media/vallu/Storage/Coding/Own_projects/betting_model/"
-    "vallu_scraper/data/features/team_elo/features_team_elo_130_50_25.parquet"
+    "vallu_scraper/data/features/team_trueskill/"
+    "features_team_trueskill_15.000_8.000_0.500.parquet"
 )
 
 con = duckdb.connect()
@@ -32,6 +31,7 @@ df = con.execute(
     f"""
     SELECT
         hltv_match_id,
+        TRY_CAST(date AS TIMESTAMP) AS started_at,
         team1_name,
         team2_name,
         team1_score,
@@ -41,9 +41,11 @@ df = con.execute(
         is_bo3,
         is_bo5
     FROM '{PARQUET_DIR}/matches.parquet'
-    ORDER BY date ASC NULLS LAST, hltv_match_id ASC
+    WHERE TRY_CAST(date AS TIMESTAMP) IS NOT NULL
+    ORDER BY started_at ASC, hltv_match_id ASC
 """
 ).df()
+con.close()
 
 df["result"] = np.where(df["team1_score"] > df["team2_score"], 0, 1)
 df["is_lan"] = (df["event_type"] == "LAN").astype(int)
@@ -117,21 +119,31 @@ df = df.merge(
     how="left",
 )
 
-# Team Elo features from selected parquet file
-team_elo_df = pd.read_parquet(TEAM_ELO_FILE)
-required_team_cols = {"hltv_match_id", "team1_elo", "team2_elo"}
-missing_team_cols = required_team_cols - set(team_elo_df.columns)
-if missing_team_cols:
+# Conservative team TrueSkill features, matching xgboost_2.py
+trueskill_df = pd.read_parquet(TRUESKILL_FILE)
+required_trueskill_cols = {
+    "hltv_match_id",
+    "team1_trueskill_conservative",
+    "team2_trueskill_conservative",
+}
+missing_trueskill_cols = required_trueskill_cols - set(trueskill_df.columns)
+if missing_trueskill_cols:
     raise ValueError(
-        f"Missing expected team ELO columns in parquet: {sorted(missing_team_cols)}"
+        "Missing expected team TrueSkill columns in parquet: "
+        f"{sorted(missing_trueskill_cols)}"
     )
 
 df = df.merge(
-    team_elo_df[["hltv_match_id", "team1_elo", "team2_elo"]],
+    trueskill_df[
+        [
+            "hltv_match_id",
+            "team1_trueskill_conservative",
+            "team2_trueskill_conservative",
+        ]
+    ],
     on="hltv_match_id",
     how="left",
 )
-df["elo_diff"] = df["team1_elo"] - df["team2_elo"]
 
 # Filter to matches with reasonable data coverage
 filtered_df = df[
@@ -140,25 +152,37 @@ filtered_df = df[
 ]
 
 feature_cols = [
-    "elo_diff",
+    *map_elo_cols,
     "kast_diff_l15",
     "swing_diff_l15",
     "team1_rolling_win_rate_l15",
     "team2_rolling_win_rate_l15",
-    "is_lan",
-    # Use only two of the three boX dummies to avoid perfect multicollinearity.
-    # When both are 0, bo1 is the implicit baseline.
-    "is_bo3",
-    "is_bo5",
-] + map_elo_cols
+    "team1_trueskill_conservative",
+    "team2_trueskill_conservative",
+]
 
 train_df, test_df = train_test_split(filtered_df, test_size=0.2, shuffle=False)
 train_df = train_df.reset_index(drop=True)
 test_df = test_df.reset_index(drop=True)
 
+missing_by_split = pd.DataFrame(
+    {
+        "train_missing": train_df[feature_cols].isna().sum(),
+        "test_missing": test_df[feature_cols].isna().sum(),
+    }
+)
+missing_by_split = missing_by_split[missing_by_split.gt(0).any(axis=1)]
+if not missing_by_split.empty:
+    print("\nMissing feature values (imputed using training-set medians):")
+    print(missing_by_split.to_string())
+
+imputer = SimpleImputer(strategy="median", keep_empty_features=True)
+train_imputed = imputer.fit_transform(train_df[feature_cols])
+test_imputed = imputer.transform(test_df[feature_cols])
+
 scaler = StandardScaler()
-train_inputs = scaler.fit_transform(train_df[feature_cols])
-test_inputs = scaler.transform(test_df[feature_cols])
+train_inputs = scaler.fit_transform(train_imputed)
+test_inputs = scaler.transform(test_imputed)
 
 train_targets = train_df["result"]
 test_targets = test_df["result"]

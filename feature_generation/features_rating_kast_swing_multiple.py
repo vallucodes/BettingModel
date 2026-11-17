@@ -1,6 +1,23 @@
+"""Generate rolling team performance features from prior matches.
+
+Reads matches.parquet and rounds.parquet from vallu_scraper/data/parquet,
+then writes features_rolling_l<window>.parquet files to
+vallu_scraper/data/features. Features include prior win rate and
+round-weighted rating, KAST, and swing.
+
+Usage, from the project root:
+    python feature_generation/features_rating_kast_swing_multiple.py
+
+The window sizes are configured at the bottom of this file; no arguments are
+required. Existing selected files are overwritten, and obsolete rolling
+feature files are removed after successful generation.
+"""
+
 import duckdb
 import pandas as pd
 import os
+
+from feature_output_cleanup import remove_stale_outputs
 
 PARQUET_DIR = "/media/vallu/Storage/Coding/Own_projects/betting_model/vallu_scraper/data/parquet"
 FEATURES_DIR = "/media/vallu/Storage/Coding/Own_projects/betting_model/vallu_scraper/data/features"
@@ -142,3 +159,10 @@ if __name__ == "__main__":
 
     for w in windows_to_generate:
         generate_rolling_features(w, base_team_stats, base_matches)
+
+    remove_stale_outputs(
+        FEATURES_DIR,
+        "features_rolling_l",
+        ".parquet",
+        {f"features_rolling_l{w}.parquet" for w in windows_to_generate},
+    )
