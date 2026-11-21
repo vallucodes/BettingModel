@@ -19,6 +19,7 @@ SCRIPTS = (
     "features_team_elo_multiple.py",
     "features_team_trueskill_multiple.py",
     "features_map_trueskill_multiple.py",
+    "features_map_strength.py",
     "generate_feature_schemas.py",
 )
 

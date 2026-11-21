@@ -1,3 +1,8 @@
+"""
+Usage, from the project root:
+    python xgboost_1_roster_trueskill.py
+"""
+
 import os
 import re
 from typing import Dict, Any, List
@@ -9,16 +14,18 @@ from sklearn.metrics import log_loss, roc_auc_score, brier_score_loss
 from sklearn.preprocessing import StandardScaler
 
 import xgboost as xgb
+import matplotlib.pyplot as plt
 
 
+MODEL_DIR = os.path.dirname(os.path.abspath(__file__))
 PARQUET_DIR = (
     "/media/vallu/Storage/Coding/Own_projects/betting_model/vallu_scraper/data/parquet"
 )
 FEATURES_ROOT = (
     "/media/vallu/Storage/Coding/Own_projects/betting_model/vallu_scraper/data/features"
 )
-MAP_ELO_FILE = os.path.join(FEATURES_ROOT, "features_map_elo_190_90_17.parquet")
-TRUESKILL_DIR = os.path.join(FEATURES_ROOT, "team_trueskill")
+ROSTER_TRUESKILL_DIR = os.path.join(FEATURES_ROOT, "roster_trueskill")
+PLOTS_DIR = os.path.join(MODEL_DIR, "plots")
 
 TRAIN_FRACTION = 0.70
 VALIDATION_FRACTION = 0.15
@@ -92,14 +99,42 @@ def predict_at_best_iteration(bst: xgb.Booster, data: xgb.DMatrix) -> np.ndarray
     return bst.predict(data)
 
 
-def build_base_dataframe() -> tuple[pd.DataFrame, List[str]]:
+def save_feature_importance_plots(
+    bst: xgb.Booster,
+    feature_cols: List[str],
+    model_label: str,
+) -> None:
+    """Save gain and split-frequency importance plots for a fitted model."""
+    os.makedirs(PLOTS_DIR, exist_ok=True)
+
+    for importance_type, importance_label in (
+        ("gain", "Average gain"),
+        ("weight", "Split frequency"),
+    ):
+        scores = bst.get_score(importance_type=importance_type)
+        importance_df = pd.DataFrame(
+            {
+                "feature": feature_cols,
+                "importance": [scores.get(feature, 0.0) for feature in feature_cols],
+            }
+        ).sort_values("importance", ascending=True)
+
+        fig, ax = plt.subplots(figsize=(10, 6))
+        ax.barh(importance_df["feature"], importance_df["importance"])
+        ax.set_title(f"XGBoost feature importance ({importance_label})\n{model_label}")
+        ax.set_xlabel(importance_label)
+        fig.tight_layout()
+
+        filename = f"xgboost_1_{model_label}_{importance_type}.png"
+        output_path = os.path.join(PLOTS_DIR, filename)
+        fig.savefig(output_path, dpi=150)
+        plt.close(fig)
+        print(f"Saved feature importance plot -> {output_path}")
+
+
+def build_base_dataframe() -> pd.DataFrame:
     """
-    Build the part of the dataframe that is common for all runs, mirroring
-    logistic_4_l15_team_elo_sweep:
-    - match-level data (incl. LAN/BO flags)
-    - simple team Elo for games-played filtering
-    - rolling l15 features
-    - fixed map ELO features from MAP_ELO_FILE
+    Build match-level data and rolling l15 features used by the roster-TrueSkill sweep.
     """
     con = duckdb.connect()
 
@@ -108,8 +143,6 @@ def build_base_dataframe() -> tuple[pd.DataFrame, List[str]]:
         SELECT
             hltv_match_id,
             TRY_CAST(date AS TIMESTAMP) AS started_at,
-            team1_name,
-            team2_name,
             team1_score,
             team2_score,
             event_type,
@@ -129,51 +162,6 @@ def build_base_dataframe() -> tuple[pd.DataFrame, List[str]]:
     for col in ["is_bo1", "is_bo3", "is_bo5"]:
         df[col] = df[col].fillna(0).astype(int)
 
-    # Simple team-level Elo (used for games-played filtering)
-    HIGH_K = 100
-    LOW_K = 20
-    THRESHOLD = 30
-
-    df["team1_elo_simple"] = None
-    df["team2_elo_simple"] = None
-    df["elo_diff_simple"] = None
-    df["team1_games"] = None
-    df["team2_games"] = None
-
-    unique_teams = pd.unique(df[["team1_name", "team2_name"]].values.ravel())
-    elo = {team: {"elo": 1500.0, "games_played": 0} for team in unique_teams}
-
-    def expected_score(elo_1: float, elo_2: float) -> float:
-        return 1.0 / (1.0 + 10 ** ((elo_2 - elo_1) / 400.0))
-
-    def update_elo(
-        elo_1: float, elo_2: float, res: int, k1: float, k2: float
-    ) -> tuple[float, float]:
-        ea = expected_score(elo_1, elo_2)
-        elo_1_new = elo_1 + k1 * ((1 - res) - ea)
-        elo_2_new = elo_2 + k2 * (res - (1 - ea))
-        return elo_1_new, elo_2_new
-
-    for idx, row in df.iterrows():
-        team1, team2 = row["team1_name"], row["team2_name"]
-        df.at[idx, "team1_elo_simple"] = elo[team1]["elo"]
-        df.at[idx, "team2_elo_simple"] = elo[team2]["elo"]
-        df.at[idx, "elo_diff_simple"] = elo[team1]["elo"] - elo[team2]["elo"]
-        df.at[idx, "team1_games"] = elo[team1]["games_played"]
-        df.at[idx, "team2_games"] = elo[team2]["games_played"]
-
-        res = df.at[idx, "result"]
-
-        k1 = HIGH_K if elo[team1]["games_played"] < THRESHOLD else LOW_K
-        k2 = HIGH_K if elo[team2]["games_played"] < THRESHOLD else LOW_K
-
-        elo[team1]["elo"], elo[team2]["elo"] = update_elo(
-            elo[team1]["elo"], elo[team2]["elo"], res, k1, k2
-        )
-        elo[team1]["games_played"] += 1
-        elo[team2]["games_played"] += 1
-
-    # Rolling l15 features
     rolling_df = pd.read_parquet(
         os.path.join(FEATURES_ROOT, "features_rolling_l15.parquet")
     )[
@@ -187,54 +175,24 @@ def build_base_dataframe() -> tuple[pd.DataFrame, List[str]]:
             "team2_rolling_win_rate_l15",
         ]
     ]
-
     rolling_df["kast_diff_l15"] = (
         rolling_df["team1_rolling_kast_l15"] - rolling_df["team2_rolling_kast_l15"]
     )
     rolling_df["swing_diff_l15"] = (
-        rolling_df["team1_rolling_swing_l15"] - rolling_df["team2_rolling_swing_l15"]
+        rolling_df["team1_rolling_swing_l15"]
+        - rolling_df["team2_rolling_swing_l15"]
     )
-
     df = df.merge(rolling_df, on="hltv_match_id", how="left")
 
-    # Fixed map ELO features (MAP_ELO_FILE constant)
-    map_elo_df = pd.read_parquet(MAP_ELO_FILE)
-
-    maps_elo = [
-        "ancient",
-        "anubis",
-        "dust2",
-        "inferno",
-        "mirage",
-        "nuke",
-        "overpass",
-        "train",
-        "vertigo",
-    ]
-    map_elo_cols = [f"{m}_elo_diff" for m in maps_elo]
-
-    missing_cols = [c for c in map_elo_cols if c not in map_elo_df.columns]
-    if missing_cols:
-        raise ValueError(
-            f"Missing expected map ELO columns in MAP_ELO_FILE: {missing_cols}"
-        )
-
-    df = df.merge(
-        map_elo_df[["hltv_match_id"] + map_elo_cols],
-        on="hltv_match_id",
-        how="left",
-    )
-
-    return df, map_elo_cols
+    return df
 
 
 def run_single_trueskill_model(
-    base_df: pd.DataFrame, map_elo_cols: List[str], ts_path: str
+    base_df: pd.DataFrame, ts_path: str
 ) -> Dict[str, Any]:
     """
-    Run an XGBoost model for a single features_team_trueskill_*.parquet file.
-    - Uses fixed map ELO features from MAP_ELO_FILE.
-    - Adds TrueSkill-based pre-match rating differences as features.
+    Run an XGBoost model for a single roster-TrueSkill feature file.
+    Uses the two lineups' conservative TrueSkill ratings as features.
     Returns a dict of metrics and metadata about this run.
     """
     ts_df = pd.read_parquet(ts_path)
@@ -242,8 +200,8 @@ def run_single_trueskill_model(
     # Only require conservative ratings for each team
     required_cols = {
         "hltv_match_id",
-        "team1_trueskill_conservative",
-        "team2_trueskill_conservative",
+        "team1_roster_trueskill_conservative",
+        "team2_roster_trueskill_conservative",
     }
     missing = required_cols - set(ts_df.columns)
     if missing:
@@ -252,21 +210,36 @@ def run_single_trueskill_model(
         )
 
     df = base_df.merge(
-        ts_df[["hltv_match_id", "team1_trueskill_conservative", "team2_trueskill_conservative"]],
+        ts_df[
+            [
+                "hltv_match_id",
+                "team1_roster_trueskill_conservative",
+                "team2_roster_trueskill_conservative",
+            ]
+        ],
         on="hltv_match_id",
         how="left",
     )
 
-    filtered_df = df[
-        (df["team1_games"] > 10)
-        & (df["team2_games"] > 10)
-    ].reset_index(drop=True)
-
-    # Very simple feature set: map ELOs + per-team conservative TrueSkill ratings
-    feature_cols = map_elo_cols + [
-        "team1_trueskill_conservative",
-        "team2_trueskill_conservative",
+    feature_cols = [
+        "is_lan",
+        "is_bo1",
+        "is_bo3",
+        "is_bo5",
+        "kast_diff_l15",
+        "swing_diff_l15",
+        "team1_rolling_win_rate_l15",
+        "team2_rolling_win_rate_l15",
+        "team1_roster_trueskill_conservative",
+        "team2_roster_trueskill_conservative",
     ]
+    # Keep debuts and rebuilt teams; only exclude matches with missing ratings.
+    filtered_df = df.dropna(
+        subset=[
+            "team1_roster_trueskill_conservative",
+            "team2_roster_trueskill_conservative",
+        ]
+    ).reset_index(drop=True)
 
     train_df, validation_df, _ = split_chronologically(filtered_df)
 
@@ -304,7 +277,7 @@ def run_single_trueskill_model(
     roc_delta = train_roc - validation_roc
     br_delta = validation_brier - train_brier
 
-    within_overfit = (
+    overfit = not (
         ll_delta <= MAX_LL_DELTA
         and roc_delta <= MAX_ROC_DELTA
         and br_delta <= MAX_BR_DELTA
@@ -312,7 +285,8 @@ def run_single_trueskill_model(
 
     fname = os.path.basename(ts_path)
     m = re.match(
-        r"features_team_trueskill_([0-9.]+)_([0-9.]+)_([0-9.]+)\.parquet", fname
+        r"features_roster_trueskill_([0-9.]+)_([0-9.]+)_([0-9.]+)\.parquet",
+        fname,
     )
     sigma = float(m.group(1)) if m else None
     beta = float(m.group(2)) if m else None
@@ -332,7 +306,7 @@ def run_single_trueskill_model(
         "ll_delta": ll_delta,
         "roc_delta": roc_delta,
         "br_delta": br_delta,
-        "within_overfit_limits": within_overfit,
+        "overfit": overfit,
         "train_matches": len(train_df),
         "validation_matches": len(validation_df),
         "best_rounds": best_boost_rounds(bst),
@@ -344,7 +318,7 @@ def run_single_trueskill_model(
         f"Validation LL={validation_ll:.4f}, ROC={validation_roc:.4f}, "
         f"Brier={validation_brier:.4f} | "
         f"dLL={ll_delta:+.4f}, dROC={roc_delta:+.4f}, dBrier={br_delta:+.4f}, "
-        f"within_overfit_limits={within_overfit}"
+        f"overfit={overfit}"
     )
 
     return result
@@ -352,7 +326,6 @@ def run_single_trueskill_model(
 
 def evaluate_selected_on_test(
     base_df: pd.DataFrame,
-    map_elo_cols: List[str],
     ts_path: str,
     boost_rounds: int,
 ) -> Dict[str, Any]:
@@ -362,20 +335,31 @@ def evaluate_selected_on_test(
         ts_df[
             [
                 "hltv_match_id",
-                "team1_trueskill_conservative",
-                "team2_trueskill_conservative",
+                "team1_roster_trueskill_conservative",
+                "team2_roster_trueskill_conservative",
             ]
         ],
         on="hltv_match_id",
         how="left",
     )
-    filtered_df = df[
-        (df["team1_games"] > 10) & (df["team2_games"] > 10)
-    ].reset_index(drop=True)
-    feature_cols = map_elo_cols + [
-        "team1_trueskill_conservative",
-        "team2_trueskill_conservative",
+    feature_cols = [
+        "is_lan",
+        "is_bo1",
+        "is_bo3",
+        "is_bo5",
+        "kast_diff_l15",
+        "swing_diff_l15",
+        "team1_rolling_win_rate_l15",
+        "team2_rolling_win_rate_l15",
+        "team1_roster_trueskill_conservative",
+        "team2_roster_trueskill_conservative",
     ]
+    filtered_df = df.dropna(
+        subset=[
+            "team1_roster_trueskill_conservative",
+            "team2_roster_trueskill_conservative",
+        ]
+    ).reset_index(drop=True)
     train_df, validation_df, test_df = split_chronologically(filtered_df)
     train_validation_df = pd.concat([train_df, validation_df], ignore_index=True)
 
@@ -400,6 +384,10 @@ def evaluate_selected_on_test(
         num_boost_round=boost_rounds,
         verbose_eval=False,
     )
+    model_label = os.path.splitext(os.path.basename(ts_path))[0].replace(
+        "features_roster_trueskill_", "roster_trueskill_"
+    )
+    save_feature_importance_plots(bst, feature_cols, model_label)
     test_probs = bst.predict(dtest)
 
     result = {
@@ -419,30 +407,33 @@ def evaluate_selected_on_test(
 
 
 def main() -> None:
-    base_df, map_elo_cols = build_base_dataframe()
+    base_df = build_base_dataframe()
 
-    if not os.path.isdir(TRUESKILL_DIR):
-        print(f"TRUESKILL_DIR does not exist: {TRUESKILL_DIR}")
+    if not os.path.isdir(ROSTER_TRUESKILL_DIR):
+        print(f"ROSTER_TRUESKILL_DIR does not exist: {ROSTER_TRUESKILL_DIR}")
         return
 
     ts_files: List[str] = sorted(
-        os.path.join(TRUESKILL_DIR, f)
-        for f in os.listdir(TRUESKILL_DIR)
-        if f.startswith("features_team_trueskill_") and f.endswith(".parquet")
+        os.path.join(ROSTER_TRUESKILL_DIR, f)
+        for f in os.listdir(ROSTER_TRUESKILL_DIR)
+        if f.startswith("features_roster_trueskill_") and f.endswith(".parquet")
     )
 
     if not ts_files:
-        print(f"No features_team_trueskill_*.parquet files found in {TRUESKILL_DIR}")
+        print(
+            "No features_roster_trueskill_*.parquet files found in "
+            f"{ROSTER_TRUESKILL_DIR}"
+        )
         return
 
-    print(f"Found {len(ts_files)} TrueSkill feature files.")
+    print(f"Found {len(ts_files)} roster TrueSkill feature files.")
 
     all_results: List[Dict[str, Any]] = []
 
     for i, path in enumerate(ts_files, start=1):
         fname = os.path.basename(path)
         try:
-            res = run_single_trueskill_model(base_df, map_elo_cols, path)
+            res = run_single_trueskill_model(base_df, path)
             all_results.append(res)
             print(f"=== [{i}/{len(ts_files)}] Done {fname} ===")
         except Exception as e:
@@ -462,21 +453,21 @@ def main() -> None:
     )
 
     # Sort by:
-    # 1) within_overfit_limits (True first)
+    # 1) overfit (False first)
     # 2) lowest validation score
     # 3) lowest validation log loss
     # 4) highest validation ROC AUC
     results_df = results_df.sort_values(
         by=[
-            "within_overfit_limits",
+            "overfit",
             "validation_score",
             "validation_log_loss",
             "validation_roc_auc",
         ],
-        ascending=[False, True, True, False],
+        ascending=[True, True, True, False],
     ).reset_index(drop=True)
 
-    print("\n=== TrueSkill candidates ranked by validation metrics ===")
+    print("\n=== Roster TrueSkill candidates ranked by validation metrics ===")
     display_cols = [
         "sigma",
         "beta",
@@ -491,7 +482,7 @@ def main() -> None:
         "roc_delta",
         "br_delta",
         "validation_score",
-        "within_overfit_limits",
+        "overfit",
         "train_matches",
         "validation_matches",
     ]
@@ -501,19 +492,19 @@ def main() -> None:
         )
     )
 
-    print("\nTop 10 TrueSkill combinations within validation overfitting limits:")
-    top_within = results_df[results_df["within_overfit_limits"]].head(10)
-    if top_within.empty:
-        print("No combinations satisfied the overfitting constraints.")
+    print("\nTop 10 roster TrueSkill combinations without overfit:")
+    top_without_overfit = results_df[~results_df["overfit"]].head(10)
+    if top_without_overfit.empty:
+        print("No combinations stayed within the overfitting constraints.")
     else:
         print(
-            top_within[display_cols].to_string(
+            top_without_overfit[display_cols].to_string(
                 index=False, float_format=lambda x: f"{x:.4f}"
             )
         )
 
     selected = results_df.iloc[0]
-    selected_path = os.path.join(TRUESKILL_DIR, selected["file"])
+    selected_path = os.path.join(ROSTER_TRUESKILL_DIR, selected["file"])
     print(
         f"\n=== Final held-out test result for selected candidate "
         f"(sigma={selected['sigma']}, beta={selected['beta']}, "
@@ -522,7 +513,6 @@ def main() -> None:
     )
     evaluate_selected_on_test(
         base_df,
-        map_elo_cols,
         selected_path,
         int(selected["best_rounds"]),
     )

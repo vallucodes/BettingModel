@@ -1,0 +1,79 @@
+Latent map-strength diagnostic
+Fit on matches before 2026-02-14T13:45, score matches from then until 2026-06-10T20:45.
+Map log loss is the mean negative log probability of the played-map winner.
+Rare means at least one of the two teams had played that map fewer than 5 times before the cutoff.
+
+Overall strength only: map ll 0.6662 (n=10066, rare 0.6754 n=5068, common 0.6569 n=4998)
+  train weighted map ll 0.6197, iters 29, 0s, results 44460, veto steps 0
+Outcome map offsets: map ll 0.8693 (n=10066, rare 1.0032 n=5068, common 0.7335 n=4998)
+  train weighted map ll 0.5160, iters 40, 0s, results 44460, veto steps 0
+Joint outcomes and vetoes: map ll 0.6899 (n=10066, rare 0.7149 n=5068, common 0.6646 n=4998)
+  veto ll 1.2434 vs uniform 1.4209, top-1 0.540 vs uniform 0.265 (n=5748)
+  tau 2.968, alpha early-ban 2.131, late-ban 0.653, pick 2.118, pi scale 7.426
+  train weighted map ll 0.5940, iters 40, 8s, results 44460, veto steps 123763
+
+Pool at the diagnostic cutoff: ancient,overpass,mirage,inferno,dust2,nuke,train
+Highest overall strengths a(team):
+  Vitality: +2.054
+  TDK: +2.014
+  FURIA: +1.670
+  Spirit: +1.656
+  Falcons: +1.550
+  MOUZ: +1.461
+  THUNDER dOWNUNDER: +1.460
+  M80: +1.418
+Largest and smallest map offsets b(team, map) among teams with 20+ matches:
+  ALTERNATE aTTaX on train: +1.896
+  WildLotus on overpass: +1.743
+  Gentle Mates on nuke: +1.579
+  Heimo on nuke: +1.511
+  SemperFi on vertigo: +1.481
+  GTZ on vertigo: +1.447
+  MOUZ on nuke: +1.390
+  Complexity on train: +1.373
+  ...
+  Natus Vincere on vertigo: -3.001
+  Zero Tenacity on ancient: -3.004
+  STATE on dust2: -3.101
+  Spirit on inferno: -3.235
+  FengDa on overpass: -3.334
+  NOVAQ on anubis: -3.370
+  Gentle Mates on dust2: -3.443
+  MOUZ on anubis: -3.848
+
+Walk-forward map strength: 34 refits, half-life 180 days, block 30 days.
+  2024-02-01: matches 595, tau 4.024, alpha ban 3.042/2.071, pick 2.674, pi 5.975, pool [ancient,mirage,vertigo,inferno,nuke,anubis,overpass], 1s
+  2024-03-02: matches 571, tau 3.462, alpha ban 2.536/1.774, pick 2.356, pi 5.032, pool [ancient,mirage,vertigo,inferno,nuke,anubis,overpass], 0s
+  2024-04-01: matches 766, tau 3.455, alpha ban 2.426/1.647, pick 2.173, pi 5.141, pool [ancient,mirage,vertigo,nuke,anubis,overpass,inferno], 0s
+  2024-05-01: matches 774, tau 3.493, alpha ban 2.334/1.520, pick 2.147, pi 5.196, pool [ancient,anubis,nuke,mirage,vertigo,inferno,overpass], 1s
+  2024-05-31: matches 675, tau 3.597, alpha ban 2.171/1.429, pick 2.129, pi 5.256, pool [ancient,anubis,nuke,mirage,vertigo,inferno,overpass], 1s
+  2024-06-30: matches 717, tau 3.703, alpha ban 2.201/1.440, pick 2.103, pi 5.638, pool [anubis,mirage,nuke,ancient,inferno,vertigo,overpass], 1s
+  2024-07-30: matches 1091, tau 3.826, alpha ban 2.181/1.385, pick 2.110, pi 5.790, pool [anubis,inferno,mirage,ancient,nuke,vertigo,dust2], 1s
+  2024-08-29: matches 864, tau 3.836, alpha ban 2.023/1.276, pick 2.006, pi 5.795, pool [anubis,mirage,inferno,ancient,nuke,vertigo,dust2], 1s
+  2024-09-28: matches 694, tau 4.008, alpha ban 2.018/1.227, pick 2.010, pi 5.885, pool [mirage,anubis,inferno,nuke,ancient,vertigo,dust2], 1s
+  2024-10-28: matches 606, tau 4.009, alpha ban 2.017/1.258, pick 2.064, pi 5.913, pool [mirage,ancient,dust2,anubis,nuke,vertigo,inferno], 1s
+  2024-11-27: matches 464, tau 3.936, alpha ban 1.987/1.169, pick 2.035, pi 5.896, pool [mirage,ancient,dust2,anubis,nuke,vertigo,inferno], 1s
+  2024-12-27: matches 418, tau 4.076, alpha ban 2.082/1.179, pick 2.106, pi 6.198, pool [dust2,mirage,nuke,ancient,inferno,anubis,vertigo], 1s
+  2025-01-26: matches 885, tau 4.145, alpha ban 2.075/1.177, pick 2.135, pi 6.384, pool [ancient,anubis,dust2,mirage,nuke,inferno,vertigo], 1s
+  2025-02-25: matches 995, tau 4.118, alpha ban 2.029/1.138, pick 2.007, pi 6.480, pool [dust2,nuke,anubis,ancient,mirage,inferno,vertigo], 1s
+  2025-03-27: matches 861, tau 4.189, alpha ban 1.913/1.093, pick 2.002, pi 6.473, pool [nuke,inferno,ancient,dust2,mirage,anubis,train], 1s
+  2025-04-26: matches 749, tau 4.350, alpha ban 1.866/1.094, pick 2.029, pi 6.523, pool [ancient,nuke,mirage,inferno,anubis,dust2,train], 1s
+  2025-05-26: matches 597, tau 4.379, alpha ban 1.845/1.035, pick 2.018, pi 6.542, pool [ancient,nuke,mirage,inferno,dust2,train,anubis], 1s
+  2025-06-25: matches 540, tau 4.404, alpha ban 1.917/1.010, pick 2.082, pi 6.697, pool [ancient,inferno,nuke,mirage,dust2,train,anubis], 2s
+  2025-07-25: matches 772, tau 4.341, alpha ban 1.981/0.939, pick 2.055, pi 6.820, pool [ancient,inferno,nuke,dust2,mirage,train,anubis], 2s
+  2025-08-24: matches 917, tau 4.313, alpha ban 2.052/0.846, pick 1.949, pi 6.937, pool [ancient,inferno,nuke,dust2,mirage,train,anubis], 2s
+  2025-09-23: matches 1008, tau 4.389, alpha ban 2.033/0.774, pick 1.944, pi 7.082, pool [ancient,nuke,inferno,dust2,mirage,train,overpass], 2s
+  2025-10-23: matches 1008, tau 4.304, alpha ban 1.978/0.737, pick 1.962, pi 6.904, pool [ancient,dust2,nuke,mirage,train,inferno,overpass], 2s
+  2025-11-22: matches 650, tau 4.362, alpha ban 1.967/0.733, pick 2.007, pi 6.927, pool [ancient,mirage,nuke,train,inferno,dust2,overpass], 2s
+  2025-12-22: matches 423, tau 4.386, alpha ban 1.975/0.728, pick 2.004, pi 7.079, pool [ancient,mirage,overpass,train,inferno,nuke,dust2], 2s
+  2026-01-21: matches 1007, tau 4.499, alpha ban 2.044/0.729, pick 2.066, pi 7.267, pool [ancient,overpass,mirage,inferno,dust2,nuke,train], 2s
+  2026-02-20: matches 1303, tau 4.519, alpha ban 2.034/0.653, pick 2.004, pi 7.239, pool [ancient,overpass,mirage,inferno,dust2,nuke,train], 2s
+  2026-03-22: matches 1252, tau 4.561, alpha ban 2.072/0.636, pick 2.028, pi 7.288, pool [ancient,dust2,mirage,inferno,overpass,nuke,anubis], 2s
+  2026-04-21: matches 942, tau 4.900, alpha ban 2.261/0.682, pick 2.182, pi 7.686, pool [ancient,dust2,mirage,inferno,nuke,overpass,anubis], 2s
+  2026-05-21: matches 839, tau 5.102, alpha ban 2.312/0.686, pick 2.182, pi 7.585, pool [ancient,dust2,mirage,inferno,nuke,overpass,anubis], 3s
+  2026-06-20: matches 364, tau 5.451, alpha ban 2.337/0.694, pick 2.199, pi 7.482, pool [ancient,anubis,dust2,inferno,nuke,mirage,overpass], 2s
+  2026-07-20: matches 838, tau 5.805, alpha ban 2.349/0.695, pick 2.183, pi 7.342, pool [dust2,mirage,ancient,nuke,inferno,overpass,anubis], 2s
+  2026-08-19: matches 1182, tau 5.984, alpha ban 2.366/0.707, pick 2.212, pi 7.187, pool [dust2,mirage,ancient,nuke,inferno,anubis,overpass], 2s
+  2026-09-18: matches 1300, tau 6.100, alpha ban 2.417/0.715, pick 2.223, pi 6.999, pool [dust2,mirage,ancient,nuke,inferno,anubis,cache], 2s
+  2026-10-18: matches 530, tau 6.365, alpha ban 2.395/0.721, pick 2.211, pi 6.824, pool [dust2,mirage,ancient,nuke,inferno,cache,anubis], 2s
+Map-strength features filled for 27197 of 29470 matches.

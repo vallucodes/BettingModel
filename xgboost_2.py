@@ -1,3 +1,8 @@
+"""
+Usage, from the project root:
+    python xgboost_2.py
+"""
+
 import os
 import re
 from typing import Dict, Any, List
@@ -101,7 +106,7 @@ def build_base_dataframe() -> tuple[pd.DataFrame, List[str]]:
     Build the part of the dataframe that is common for all runs, mirroring
     logistic_4_l15_team_elo_sweep:
     - match-level data (incl. LAN/BO flags)
-    - simple team Elo for games-played filtering
+    - team game counts for eligibility filtering
     - rolling l15 features
     - fixed map ELO features from MAP_ELO_FILE
     """
@@ -133,49 +138,18 @@ def build_base_dataframe() -> tuple[pd.DataFrame, List[str]]:
     for col in ["is_bo1", "is_bo3", "is_bo5"]:
         df[col] = df[col].fillna(0).astype(int)
 
-    # Simple team-level Elo (used for games-played filtering)
-    HIGH_K = 100
-    LOW_K = 20
-    THRESHOLD = 30
-
-    df["team1_elo_simple"] = None
-    df["team2_elo_simple"] = None
-    df["elo_diff_simple"] = None
     df["team1_games"] = None
     df["team2_games"] = None
 
     unique_teams = pd.unique(df[["team1_name", "team2_name"]].values.ravel())
-    elo = {team: {"elo": 1500.0, "games_played": 0} for team in unique_teams}
-
-    def expected_score(elo_1: float, elo_2: float) -> float:
-        return 1.0 / (1.0 + 10 ** ((elo_2 - elo_1) / 400.0))
-
-    def update_elo(
-        elo_1: float, elo_2: float, res: int, k1: float, k2: float
-    ) -> tuple[float, float]:
-        ea = expected_score(elo_1, elo_2)
-        elo_1_new = elo_1 + k1 * ((1 - res) - ea)
-        elo_2_new = elo_2 + k2 * (res - (1 - ea))
-        return elo_1_new, elo_2_new
+    games_played = {team: 0 for team in unique_teams}
 
     for idx, row in df.iterrows():
         team1, team2 = row["team1_name"], row["team2_name"]
-        df.at[idx, "team1_elo_simple"] = elo[team1]["elo"]
-        df.at[idx, "team2_elo_simple"] = elo[team2]["elo"]
-        df.at[idx, "elo_diff_simple"] = elo[team1]["elo"] - elo[team2]["elo"]
-        df.at[idx, "team1_games"] = elo[team1]["games_played"]
-        df.at[idx, "team2_games"] = elo[team2]["games_played"]
-
-        res = df.at[idx, "result"]
-
-        k1 = HIGH_K if elo[team1]["games_played"] < THRESHOLD else LOW_K
-        k2 = HIGH_K if elo[team2]["games_played"] < THRESHOLD else LOW_K
-
-        elo[team1]["elo"], elo[team2]["elo"] = update_elo(
-            elo[team1]["elo"], elo[team2]["elo"], res, k1, k2
-        )
-        elo[team1]["games_played"] += 1
-        elo[team2]["games_played"] += 1
+        df.at[idx, "team1_games"] = games_played[team1]
+        df.at[idx, "team2_games"] = games_played[team2]
+        games_played[team1] += 1
+        games_played[team2] += 1
 
     # Rolling l15 features
     rolling_df = pd.read_parquet(
@@ -266,8 +240,12 @@ def run_single_trueskill_model(
         & (df["team2_games"] > 10)
     ].reset_index(drop=True)
 
-    # Feature set: map ELOs, rolling l15 performance, and per-team conservative TrueSkill ratings
-    feature_cols = map_elo_cols + [
+    # Feature set: match context, map ELOs, rolling l15 performance, and TrueSkill ratings
+    feature_cols = [
+        "is_lan",
+        "is_bo1",
+        "is_bo3",
+        "is_bo5",
         "kast_diff_l15",
         "swing_diff_l15",
         "team1_rolling_win_rate_l15",
@@ -310,7 +288,7 @@ def run_single_trueskill_model(
     ll_delta = validation_ll - train_ll
     roc_delta = train_roc - validation_roc
     br_delta = validation_brier - train_brier
-    within_overfit = (
+    overfit = not (
         ll_delta <= MAX_LL_DELTA
         and roc_delta <= MAX_ROC_DELTA
         and br_delta <= MAX_BR_DELTA
@@ -369,7 +347,7 @@ def run_single_trueskill_model(
         "ll_delta": ll_delta,
         "roc_delta": roc_delta,
         "br_delta": br_delta,
-        "within_validation_overfit_limits": within_overfit,
+        "overfit": overfit,
         "train_matches": len(train_df),
         "validation_matches": len(validation_df),
         "test_matches": len(test_df),
@@ -382,7 +360,7 @@ def run_single_trueskill_model(
         f"Validation LL={validation_ll:.4f}, ROC={validation_roc:.4f}, "
         f"Brier={validation_brier:.4f} | "
         f"dLL={ll_delta:+.4f}, dROC={roc_delta:+.4f}, dBrier={br_delta:+.4f}, "
-        f"within_validation_overfit_limits={within_overfit}"
+        f"overfit={overfit}"
     )
     print(
         f"Final test (refit on train+validation, {best_rounds} rounds): "
@@ -426,8 +404,7 @@ def main() -> None:
         f"Train-to-validation dLL={result['ll_delta']:+.4f}, "
         f"dROC={result['roc_delta']:+.4f}, "
         f"dBrier={result['br_delta']:+.4f}, "
-        f"within_validation_overfit_limits="
-        f"{result['within_validation_overfit_limits']}, "
+        f"overfit={result['overfit']}, "
         f"best_rounds={result['best_rounds']}"
     )
 

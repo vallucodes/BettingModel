@@ -4,25 +4,49 @@ Schemas for feature parquets
 Results
 
 xgboost1 only TrueSkill
-Test: LL=0.6285, ROC=0.6923, Brier=0.2195
+LL=0.6285, ROC=0.6923, Brier=0.2195
 
 xgboost1 before new parquet files (6, 2, 0,1)
-Test: LL=0.6282, ROC=0.6909, Brier=0.2193
+LL=0.6282, ROC=0.6909, Brier=0.2193
 
 xgboost2 before new parquet files (6, 2, 0,1)
-Test: LL=0.6275, ROC=0.6891, Brier=0.2191
+LL=0.6275, ROC=0.6891, Brier=0.2191
 
 
 After adding 7k matches
 
-xgboost1 only TrueSkill
-Test: LL=0.6379, ROC=0.6736, Brier=0.2239
+xgboost1 with TrueSkill
+LL=0.6379, ROC=0.6736, Brier=0.2239
 
 xgboost1 with Trueskill and map elo
-Test: LL=0.6370, ROC=0.6742, Brier=0.2234
+LL=0.6370, ROC=0.6742, Brier=0.2234
 
 xgboost2 with Trueskill, map elo, kast diff l15, swing diff l15, rolling win rate l15
-Test: LL=0.6359, ROC=0.6763, Brier=0.2229
+LL=0.6359, ROC=0.6763, Brier=0.2229
+
+xgboost2 with
+    Trueskill, map elo, kast diff l15, swing diff l15, rolling win rate l15,
+    is_lan, is_bo1...is_bo5
+LL=0.6381, ROC=0.6729, Brier=0.2240
+
+xgboost2 with
+    Trueskill, kast diff l15, swing diff l15, rolling win rate l15,
+    is_lan, is_bo1...is_bo5
+LL=0.6370, ROC=0.6739, Brier=0.2235
 
 logictic with Trueskill, map elo, kast diff l15, swing diff l15, rolling win rate l15
-Test: LL=0.631,  ROC=0.683,  Brier=0.221
+LL=0.631,  ROC=0.683,  Brier=0.221
+
+xgboost2 with
+    roster Trueskill
+LL=0.6013, ROC=0.7235, Brier=0.2085
+
+xgboost2 with
+    roster Trueskill, kast diff l15, swing diff l15, rolling win rate l15,
+    is_lan, is_bo1...is_bo5
+LL=0.5986, ROC=0.7259, Brier=0.2076
+
+xgboost4 with
+    map strength1, roster Trueskill, kast diff l15, swing diff l15, rolling win rate l15,
+    is_lan, is_bo1...is_bo5
+LL=0.5948, ROC=0.7314, Brier=0.2059

@@ -84,7 +84,12 @@ def compute_latest_team_ratings(features_df: pd.DataFrame, matches_df: pd.DataFr
 
 
 def build_last_50_matches_table(features_df: pd.DataFrame, matches_df: pd.DataFrame) -> pd.DataFrame:
-    merged = features_df.merge(matches_df, on="hltv_match_id", how="left", validate="one_to_one")
+    merged = features_df.merge(
+        matches_df[["hltv_match_id", "team1_name", "team2_name"]],
+        on="hltv_match_id",
+        how="left",
+        validate="one_to_one",
+    )
     merged = merged.sort_values(
         ["started_at", "hltv_match_id"], na_position="last"
     )
