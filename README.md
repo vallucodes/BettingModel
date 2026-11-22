@@ -49,6 +49,31 @@ candidate and boosting rounds using v1 validation, then reuses that setup and a
 fixed seed for every variant. It writes a metric summary and paired test
 predictions to `model/map_feature_ablation/`.
 
+To visualize team-level map strength, run
+`python model/feature_generation/plot_map_strength_teams.py`. This refits the
+latest walk-forward joint-model cutoff and writes a top-ten team/map heatmap
+and CSV under `vallu_scraper/data/features/`. The chart shows strength by map,
+map offsets relative to each team's overall strength, and offset uncertainty.
+The six XGBoost map features are matchup-level aggregates, so they are not
+individual team ratings and cannot be plotted against one team in isolation.
+
+## Player-based map-strength experiment
+
+`python model/feature_generation/features_player_map_strength.py` generates
+`features_map_strength_player_joint_v1.parquet`. It estimates each player's
+overall and map-specific strengths from earlier map results and vetoes, then
+uses the mean of the players listed for each side as the side strength. Team
+names do not identify or carry ratings. A stand-in only contributes while
+listed, weighted by the roster mean. The generator assumes every listed player
+contributed equally because `players.parquet` has no starter/substitute flag;
+player nicknames are the available identity and are not stable player IDs.
+
+The output uses the same six match-level map features as the team-based model.
+Evaluate it without replacing the existing model with
+`python model/xgboost_5.py`; that runner loads the roster-based player feature
+parquet through the `xgboost_4` training workflow. Run the generator's
+`--check` option for its likelihood-gradient and roster-aggregation checks.
+
 
 # TODO
 

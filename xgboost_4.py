@@ -1,9 +1,7 @@
 """Train the XGBoost match model with precomputed joint map-strength features.
 
-Generate the feature parquet first:
-    python model/feature_generation/features_map_strength.py
-Then run this model:
-    python model/xgboost_4.py
+Usage:
+    python xgboost_4.py
 """
 
 import os
@@ -29,7 +27,7 @@ FEATURES_ROOT = (
 )
 ROSTER_TRUESKILL_DIR = os.path.join(FEATURES_ROOT, "roster_trueskill")
 MAP_STRENGTH_FILE = os.path.join(
-    FEATURES_ROOT, "features_map_strength_joint_v1.parquet"
+    FEATURES_ROOT, "features_map_strength_joint_v3.parquet"
 )
 PLOTS_DIR = os.path.join(MODEL_DIR, "plots")
 

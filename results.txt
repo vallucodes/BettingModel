@@ -47,6 +47,11 @@ xgboost2 with
 LL=0.5986, ROC=0.7259, Brier=0.2076
 
 xgboost4 with
-    map strength1, roster Trueskill, kast diff l15, swing diff l15, rolling win rate l15,
+    map strength v1, roster Trueskill, kast diff l15, swing diff l15, rolling win rate l15,
     is_lan, is_bo1...is_bo5
 LL=0.5948, ROC=0.7314, Brier=0.2059
+
+xgboost4 with
+    map strength v3, roster Trueskill, kast diff l15, swing diff l15, rolling win rate l15,
+    is_lan, is_bo1...is_bo5
+LL=0.5978, ROC=0.7276, Brier=0.2072
